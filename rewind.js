@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.7.5.0
+// VERSION: 1.7.5.1
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -294,7 +294,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   overlay.innerHTML = `
     <div class="vr-crinkle"></div><div class="vr-crinkle"></div>
     <div class="vr-ghost" hidden><div class="vr-ghost-spin"><img alt="" /></div><div class="vr-hole"></div></div>
-    <div class="vr-lyric" aria-hidden="true"></div>
+    <div class="vr-lyric" dir="auto" aria-hidden="true"></div>
     <div class="vr-live" role="status" aria-live="polite"></div>
     <button class="vr-next hidden" data-act="next-record" aria-label="Next song"><img alt="" /></button>
     <button class="vr-close vr-full" data-act="fullscreen"></button>
@@ -308,8 +308,8 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
       <div class="vr-heart" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 20.3l-1.3-1.2C6 14.9 3 12.2 3 8.9 3 6.2 5.1 4.1 7.8 4.1c1.5 0 3 .7 4.2 1.9 1.2-1.2 2.7-1.9 4.2-1.9 2.7 0 4.8 2.1 4.8 4.8 0 3.3-3 6-7.7 10.2L12 20.3z"/></svg></div>
     </div></div>
     <div class="vr-meta">
-      <div class="vr-title"></div>
-      <div class="vr-artist"></div>
+      <div class="vr-title" dir="auto"></div>
+      <div class="vr-artist" dir="auto"></div>
     </div>
     <div class="vr-progress">
       <span class="vr-time cur">0:00</span>
@@ -562,7 +562,9 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     if (token !== trackToken) return;
 
     titleText.data = title;
+    titleEl.title = title; // full text on hover when a long title is cut off
     artistText.data = artist;
+    artistEl.title = artist;
     const uri = item && item.uri;
     if (cover) {
       if (coverImg.src !== cover.src) crossfadeCover();
