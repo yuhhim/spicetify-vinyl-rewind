@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.7.11.2
+// VERSION: 1.7.12.0
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -324,6 +324,35 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     "volume-one-wave": "M1 5.5h3L8 2v12l-4-3.5H1zM10.2 5.2a4 4 0 0 1 0 5.6l-1-1a2.6 2.6 0 0 0 0-3.6z",
     "volume-off": "M1 5.5h3L8 2v12l-4-3.5H1zM10 5.9l1-1 1.6 1.6 1.6-1.6 1 1-1.6 1.6 1.6 1.6-1 1-1.6-1.6-1.6 1.6-1-1 1.6-1.6z",
   };
+  // the player controls use Spotify's own words, so they appear in the language Spotify is set to (English otherwise)
+  const t = (key, fallback) => {
+    try {
+      const v = Spicetify.Locale && Spicetify.Locale.get(key);
+      return typeof v === "string" && v && v !== key ? v : fallback;
+    } catch {
+      return fallback;
+    }
+  };
+  const attr = (v) => String(v).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  const LABEL = {
+    play: t("playback-control.play", "Play"),
+    pause: t("playback-control.pause", "Pause"),
+    prev: t("playback-control.skip-back", "Previous"),
+    next: t("playback-control.skip-forward", "Next"),
+    shuffleOn: t("playback-control.enable-shuffle", "Enable shuffle"),
+    shuffleOff: t("playback-control.disable-shuffle", "Disable shuffle"),
+    repeatOn: t("playback-control.enable-repeat", "Enable repeat"),
+    repeatOne: t("playback-control.enable-repeat-one", "Enable repeat one"),
+    repeatOff: t("playback-control.disable-repeat", "Disable repeat"),
+    mute: t("playback-control.mute", "Mute"),
+    unmute: t("playback-control.unmute", "Unmute"),
+    close: t("close", "Close"),
+    fullscreen: t("npv.full-screen", "Full screen"),
+    exitFullscreen: t("web-player.cinema-mode.fullscreen.exit", "Exit full screen"),
+    volume: t("playback-control.a11y.volume-slider-button", "Change volume"),
+    progress: t("playback-control.a11y.seek-slider-button", "Change progress"),
+  };
+
   const icon = (name, size) =>
     `<svg width="${size}" height="${size}" viewBox="0 0 16 16" fill="currentColor">${(Spicetify.SVGIcons && Spicetify.SVGIcons[name]) || (FALLBACK_ICONS[name] ? `<path d="${FALLBACK_ICONS[name]}"/>` : "")}</svg>`;
   const FS_ENTER = `<svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M1 1h5v1.5H2.5V6H1V1zm9 0h5v5h-1.5V2.5H10V1zM1 10h1.5v3.5H6V15H1v-5zm13.5 0H15v5h-5v-1.5h3.5V10z"/></svg>`;
@@ -356,7 +385,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     </div>
     <button class="vr-next hidden" data-act="next-record" aria-label="Next song"><img alt="" /></button>
     <button class="vr-close vr-full" data-act="fullscreen"></button>
-    <button class="vr-close" data-act="close" aria-label="Close" title="Close">${icon("x", 22)}</button>
+    <button class="vr-close" data-act="close" aria-label="${attr(LABEL.close)}" title="${attr(LABEL.close)}">${icon("x", 22)}</button>
     <div class="vr-disc-slot"><div class="vr-disc" tabindex="0" role="slider" aria-label="Record. Turn to rewind or fast-forward" aria-valuemin="0">
       <div class="vr-spin">
         <img alt="" />
@@ -371,7 +400,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     </div>
     <div class="vr-progress">
       <span class="vr-time cur">0:00</span>
-      <div class="vr-bar" tabindex="0" role="slider" aria-label="Song position" aria-valuemin="0">
+      <div class="vr-bar" tabindex="0" role="slider" aria-label="${attr(LABEL.progress)}" aria-valuemin="0">
         <div class="vr-track"></div><div class="vr-fill"></div>
         <div class="vr-thumb-rail"><div class="vr-thumb"></div></div>
         <div class="vr-bar-tip" aria-hidden="true">0:00</div>
@@ -379,14 +408,14 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
       <span class="vr-time dur" role="button" tabindex="0">0:00</span>
     </div>
     <div class="vr-controls">
-      <button class="vr-ctl" data-act="shuffle" aria-label="Shuffle" title="Shuffle">${icon("shuffle", 26)}</button>
-      <button class="vr-ctl" data-act="prev" aria-label="Previous" title="Previous">${icon("skip-back", 30)}</button>
+      <button class="vr-ctl" data-act="shuffle" aria-label="${attr(LABEL.shuffleOn)}" title="${attr(LABEL.shuffleOn)}">${icon("shuffle", 26)}</button>
+      <button class="vr-ctl" data-act="prev" aria-label="${attr(LABEL.prev)}" title="${attr(LABEL.prev)}">${icon("skip-back", 30)}</button>
       <button class="vr-ctl vr-play" data-act="play" aria-label="Play/Pause"></button>
-      <button class="vr-ctl" data-act="next" aria-label="Next" title="Next">${icon("skip-forward", 30)}</button>
-      <button class="vr-ctl" data-act="repeat" aria-label="Repeat">${icon("repeat", 26)}</button>
+      <button class="vr-ctl" data-act="next" aria-label="${attr(LABEL.next)}" title="${attr(LABEL.next)}">${icon("skip-forward", 30)}</button>
+      <button class="vr-ctl" data-act="repeat" aria-label="${attr(LABEL.repeatOn)}" title="${attr(LABEL.repeatOn)}">${icon("repeat", 26)}</button>
       <div class="vr-volume">
-      <button class="vr-vol-btn" data-act="mute" aria-label="Mute"></button>
-      <div class="vr-vol-bar" tabindex="0" role="slider" aria-label="Volume" aria-valuemin="0" aria-valuemax="100">
+      <button class="vr-vol-btn" data-act="mute" aria-label="${attr(LABEL.mute)}"></button>
+      <div class="vr-vol-bar" tabindex="0" role="slider" aria-label="${attr(LABEL.volume)}" aria-valuemin="0" aria-valuemax="100">
         <div class="vr-track"></div><div class="vr-fill"></div>
         <div class="vr-thumb-rail"><div class="vr-thumb"></div></div>
       </div>
@@ -1062,7 +1091,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   }
   function renderPlayButton(playing) {
     setIcon(playBtn, playing ? "pause" : "play", 32);
-    setLabel(playBtn, playing ? "Pause" : "Play");
+    setLabel(playBtn, playing ? LABEL.pause : LABEL.play);
   }
 
   function updateButtons() {
@@ -1072,12 +1101,13 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     shuffleBtn.classList.toggle("on", !!sh);
     shuffleBtn.classList.toggle("off", !sh);
     shuffleBtn.setAttribute("aria-pressed", String(!!sh)); // screen readers hear "on" / "off"
+    setLabel(shuffleBtn, sh ? LABEL.shuffleOff : LABEL.shuffleOn); // what a click will do, like Spotify's own buttons
     const rp = Spicetify.Player.getRepeat();
     setIcon(repeatBtn, rp === 2 ? "repeat-once" : "repeat", 26);
     repeatBtn.classList.toggle("on", rp > 0);
     repeatBtn.classList.toggle("off", rp === 0);
     repeatBtn.setAttribute("aria-pressed", String(rp > 0));
-    setLabel(repeatBtn, rp === 2 ? "Repeat one" : "Repeat");
+    setLabel(repeatBtn, rp === 0 ? LABEL.repeatOn : rp === 1 ? LABEL.repeatOne : LABEL.repeatOff);
   }
 
   // ---------- rewind sound: soft, low tape-rewind rumble that follows the hand's speed ----------
@@ -1492,7 +1522,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
     volRailEl.style.transform = `translateX(${v * 100}%)`;
     const name = v === 0 ? "volume-off" : v < 0.34 ? "volume-one-wave" : v < 0.67 ? "volume-two-wave" : "volume";
     setIcon(muteBtn, name, 22);
-    muteBtn.title = v === 0 ? "Unmute" : "Mute";
+    muteBtn.title = v === 0 ? LABEL.unmute : LABEL.mute;
     muteBtn.setAttribute("aria-label", muteBtn.title);
     volBarEl.setAttribute("aria-valuenow", String(Math.round(v * 100)));
   }
@@ -1607,8 +1637,8 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
   function updateFullBtn() {
     const fs = !!document.fullscreenElement;
     fullBtn.innerHTML = fs ? FS_EXIT : FS_ENTER;
-    fullBtn.setAttribute("aria-label", fs ? "Exit full screen" : "Full screen");
-    fullBtn.title = fs ? "Exit full screen" : "Full screen";
+    fullBtn.setAttribute("aria-label", fs ? LABEL.exitFullscreen : LABEL.fullscreen);
+    fullBtn.title = fs ? LABEL.exitFullscreen : LABEL.fullscreen;
   }
   updateFullBtn();
   document.addEventListener("fullscreenchange", () => {
