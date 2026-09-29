@@ -1,6 +1,7 @@
 # The Spicetify Marketplace loads rewind.js through jsDelivr, which caches it.
 # Purge that cache on every push so updates reach users on their next Spotify launch.
 # jsDelivr throttles repeated purges of the same file; when that happens, wait it out and purge again.
+# A broken rewind.js is never purged into the CDN: the last good (cached) copy keeps being served instead.
 name: Purge jsDelivr cache
 
 on:
@@ -9,7 +10,8 @@ on:
     paths: ["rewind.js", "manifest.json", "README.md", "preview.webp"]
   workflow_dispatch:
 
-permissions: {}
+permissions:
+  contents: read
 
 concurrency:
   group: purge-cdn
@@ -20,6 +22,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      - uses: actions/checkout@v4
+      - name: Check
+        run: |
+          node --check rewind.js
+          node -e 'JSON.parse(require("fs").readFileSync("manifest.json", "utf8"))'
+          version=$(sed -n 's|^// VERSION: \([0-9.]*\)$|\1|p' rewind.js | head -1)
+          test -n "$version"
+          echo "rewind.js $version looks good"
       - name: Purge
         run: |
           for f in rewind.js manifest.json README.md preview.webp; do
