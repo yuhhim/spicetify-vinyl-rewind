@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.6.1
+// VERSION: 1.7.0
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -152,6 +152,13 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
 #vr-overlay .vr-track { background: rgba(255,255,255,0.35); }
 #vr-overlay .vr-fill { background: #fff; transform-origin: 0 50%; transform: scaleX(0); will-change: transform; }
 #vr-overlay .vr-thumb-rail { position: absolute; inset: 0; will-change: transform; pointer-events: none; }
+#vr-overlay .vr-bar-tip {
+  position: absolute; left: 0; bottom: 22px; pointer-events: none; white-space: nowrap;
+  padding: 3px 8px; border-radius: 6px; font-size: 12px; font-variant-numeric: tabular-nums;
+  background: rgba(0,0,0,0.55); color: #fff; opacity: 0; transition: opacity 0.12s;
+}
+#vr-overlay .vr-bar-tip.show { opacity: 1; }
+#vr-overlay.idle .vr-bar-tip { opacity: 0; }
 #vr-overlay .vr-thumb {
   position: absolute; left: 0; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px;
   border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.3);
@@ -296,6 +303,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
       <div class="vr-bar" tabindex="0" role="slider" aria-label="Song position" aria-valuemin="0">
         <div class="vr-track"></div><div class="vr-fill"></div>
         <div class="vr-thumb-rail"><div class="vr-thumb"></div></div>
+        <div class="vr-bar-tip" aria-hidden="true">0:00</div>
       </div>
       <span class="vr-time dur">0:00</span>
     </div>
@@ -346,6 +354,8 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   const curText = textSlot(curEl);
   const durText = textSlot(durEl);
   const barEl = $(".vr-bar");
+  const barTip = $(".vr-bar-tip");
+  const barTipText = textSlot(barTip);
   const fillEl = $(".vr-fill");
   const railEl = $(".vr-thumb-rail");
   const playBtn = $('[data-act="play"]');
@@ -1156,13 +1166,24 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     barEl.setPointerCapture(e.pointerId);
     barDrag = barPos(e);
   });
+  // a small time bubble follows the pointer over the bar (and while dragging it)
+  function showBarTip(e) {
+    const r = barEl.getBoundingClientRect();
+    const x = Math.min(r.width, Math.max(0, e.clientX - r.left));
+    barTipText.data = fmt((x / r.width) * durationSec());
+    barTip.style.transform = `translateX(${x}px) translateX(-50%)`;
+    barTip.classList.add("show");
+  }
   barEl.addEventListener("pointermove", (e) => {
     if (barDrag !== null) barDrag = barPos(e);
+    if (durationSec()) showBarTip(e);
   });
+  barEl.addEventListener("pointerleave", () => { if (barDrag === null) barTip.classList.remove("show"); });
   function barUp() {
     if (barDrag === null) return;
     seekTo(barDrag);
     barDrag = null;
+    if (!barEl.matches(":hover")) barTip.classList.remove("show");
   }
   barEl.addEventListener("pointerup", barUp);
   barEl.addEventListener("pointercancel", barUp);
