@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.7.3.0
+// VERSION: 1.7.4.0
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -933,57 +933,102 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   }
 
   // ---------- rewind sound: soft, low tape-rewind rumble that follows the hand's speed ----------
-  const sfx = { ac: null, speed: 0, gain: 0, phase: 0, pitch: 1, nextJump: 0, lp: 0, lp2: 0, n1: 0, n2: 0, quietSince: 0 };
+  // It runs on the audio thread (AudioWorklet), so busy moments in Spotify can never make it stutter.
+  // Older engines without AudioWorklet get the same sound from a ScriptProcessor on the main thread.
+  const sfx = { ac: null, port: null, sent: 0, speed: 0, gain: 0, phase: 0, pitch: 1, nextJump: 0, lp: 0, lp2: 0, n1: 0, n2: 0, quietSince: 0 };
+
+  // Pure DSP (also shipped to the audio thread as source text, so it may only use its arguments and Math).
+  // st: filter/gain state, speed: multiples of normal playback speed.
+  function sfxRender(st, speed, outL, outR, sr) {
+    const n = outL.length;
+    speed = Math.min(8, Math.abs(speed));
+    const target = speed > 0.1 ? Math.min(0.06, 0.018 + speed * 0.008) : 0;
+    if (target === 0 && st.gain === 0) {
+      outL.fill(0);
+      outR.fill(0);
+      return;
+    }
+    const gStep = 1 / (sr * 0.006); // ~6 ms fades: instant but click-free
+    const toneCut = Math.min(1, ((260 + speed * 90) / sr) * 6.283);
+    const hissCut = Math.min(1, ((500 + speed * 160) / sr) * 6.283);
+    for (let i = 0; i < n; i++) {
+      // garble: pitch hops like voices on a rewinding tape
+      if (--st.nextJump <= 0) {
+        st.pitch = 0.75 + Math.random() * 0.5;
+        st.nextJump = sr * (0.04 + Math.random() * 0.06);
+      }
+      st.phase += ((55 + speed * 28) * st.pitch) / sr;
+      if (st.phase > 1) st.phase -= 1;
+      const saw = st.phase * 2 - 1;
+      st.lp += (saw - st.lp) * toneCut;
+      st.lp2 += (st.lp - st.lp2) * toneCut;
+      // soft low hiss
+      const noise = Math.random() * 2 - 1;
+      st.n1 += (noise - st.n1) * hissCut;
+      st.n2 += (st.n1 - st.n2) * hissCut;
+      st.gain += target > st.gain ? Math.min(gStep, target - st.gain) : -Math.min(gStep, st.gain - target);
+      const v = (st.lp2 * 0.8 + st.n2 * 0.9) * st.gain;
+      outL[i] = v;
+      outR[i] = v;
+    }
+  }
+
+  const SFX_WORKLET = `${sfxRender.toString()}
+class VrSfx extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.st = { gain: 0, phase: 0, pitch: 1, nextJump: 0, lp: 0, lp2: 0, n1: 0, n2: 0 };
+    this.speed = 0;
+    this.port.onmessage = (e) => (this.speed = +e.data || 0);
+  }
+  process(inputs, outputs) {
+    const o = outputs[0];
+    sfxRender(this.st, this.speed, o[0], o[1] || o[0], sampleRate);
+    return true;
+  }
+}
+registerProcessor("vinyl-rewind-sfx", VrSfx);`;
+
+  function setSfxSpeed(v) {
+    sfx.speed = v;
+    if (sfx.port && v !== sfx.sent) {
+      sfx.sent = v;
+      sfx.port.postMessage(v);
+    }
+  }
 
   function startSfx() {
     if (sfx.ac) {
       if (sfx.ac.state === "suspended") sfx.ac.resume();
       return;
     }
+    let ac;
     try {
-      const ac = new AudioContext({ latencyHint: "interactive" });
-      const node = ac.createScriptProcessor(512, 0, 2);
-      node.onaudioprocess = renderSfx;
-      node.connect(ac.destination);
-      sfx.ac = ac;
-    } catch {}
-  }
-
-  function renderSfx(e) {
-    const outL = e.outputBuffer.getChannelData(0);
-    const outR = e.outputBuffer.getChannelData(1);
-    const n = outL.length;
-    const speed = Math.min(8, Math.abs(sfx.speed)); // multiples of normal playback speed
-    const target = speed > 0.1 ? Math.min(0.06, 0.018 + speed * 0.008) : 0;
-    if (target === 0 && sfx.gain === 0) {
-      outL.fill(0);
-      outR.fill(0);
+      ac = new AudioContext({ latencyHint: "interactive" });
+    } catch {
       return;
     }
-    const sr = sfx.ac.sampleRate;
-    const gStep = 1 / (sr * 0.006); // ~6 ms fades: instant but click-free
-    const toneCut = Math.min(1, ((260 + speed * 90) / sr) * 6.283);
-    const hissCut = Math.min(1, ((500 + speed * 160) / sr) * 6.283);
-    for (let i = 0; i < n; i++) {
-      // garble: pitch hops like voices on a rewinding tape
-      if (--sfx.nextJump <= 0) {
-        sfx.pitch = 0.75 + Math.random() * 0.5;
-        sfx.nextJump = sr * (0.04 + Math.random() * 0.06);
-      }
-      sfx.phase += ((55 + speed * 28) * sfx.pitch) / sr;
-      if (sfx.phase > 1) sfx.phase -= 1;
-      const saw = sfx.phase * 2 - 1;
-      sfx.lp += (saw - sfx.lp) * toneCut;
-      sfx.lp2 += (sfx.lp - sfx.lp2) * toneCut;
-      // soft low hiss
-      const noise = Math.random() * 2 - 1;
-      sfx.n1 += (noise - sfx.n1) * hissCut;
-      sfx.n2 += (sfx.n1 - sfx.n2) * hissCut;
-      sfx.gain += target > sfx.gain ? Math.min(gStep, target - sfx.gain) : -Math.min(gStep, sfx.gain - target);
-      const v = (sfx.lp2 * 0.8 + sfx.n2 * 0.9) * sfx.gain;
-      outL[i] = v;
-      outR[i] = v;
-    }
+    sfx.ac = ac;
+    const mainThread = () => {
+      try {
+        const node = ac.createScriptProcessor(512, 0, 2);
+        node.onaudioprocess = (e) => sfxRender(sfx, sfx.speed, e.outputBuffer.getChannelData(0), e.outputBuffer.getChannelData(1), ac.sampleRate);
+        node.connect(ac.destination);
+      } catch {}
+    };
+    if (!ac.audioWorklet || typeof AudioWorkletNode !== "function") return mainThread();
+    const url = URL.createObjectURL(new Blob([SFX_WORKLET], { type: "application/javascript" }));
+    ac.audioWorklet
+      .addModule(url)
+      .then(() => {
+        const node = new AudioWorkletNode(ac, "vinyl-rewind-sfx", { numberOfInputs: 0, outputChannelCount: [2] });
+        node.connect(ac.destination);
+        sfx.port = node.port;
+        sfx.sent = 0;
+        setSfxSpeed(sfx.speed); // catch up with a scratch that started while the module loaded
+      })
+      .catch(mainThread)
+      .finally(() => URL.revokeObjectURL(url));
   }
 
   // ---------- turntable state ----------
@@ -1057,9 +1102,9 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
 
   function renderFrame() {
     if (grabbing) {
-      sfx.speed = !settings.sound || performance.now() - lastMoveAt > HAND_STILL_MS ? 0 : handVel / DEG_PER_SEC;
+      setSfxSpeed(!settings.sound || performance.now() - lastMoveAt > HAND_STILL_MS ? 0 : handVel / DEG_PER_SEC);
     } else {
-      sfx.speed = 0;
+      setSfxSpeed(0);
       setSpinning(isPlaying());
     }
 
@@ -1086,7 +1131,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     syncVolume();
     if (sfx.ac) {
       // the sound engine sleeps whenever the record is not being held
-      if (grabbing || sfx.gain > 0) {
+      if (grabbing || sfx.speed) {
         sfx.quietSince = 0;
       } else if (sfx.ac.state === "running") {
         if (!sfx.quietSince) sfx.quietSince = performance.now();
@@ -1176,7 +1221,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     discEl.style.transition = "";
     layoutIdle();
     wake();
-    sfx.speed = 0;
+    setSfxSpeed(0);
     if (seek && Math.abs(vPos - grabStartPos) > 0.05) seekTo(vPos); // a plain tap should not stutter the audio
     if (wasPlaying) {
       setSpinning(true); // let go: back to full speed instantly
@@ -1619,7 +1664,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
       if (settings.idle) armIdle();
       else { clearTimeout(idleTimer); setIdle(false); }
     }
-    if (!settings.sound) sfx.speed = 0;
+    if (!settings.sound) setSfxSpeed(0);
     if (isOpen) {
       lyrics = { uri: null, lines: null, failedAt: 0 }; // reload (or drop) lyrics to match the setting
       const item = currentItem();
@@ -1670,7 +1715,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     clearTimeout(idleTimer);
     setIdle(false);
     if (weWentFullscreen && document.fullscreenElement) document.exitFullscreen().catch(() => {});
-    sfx.speed = 0;
+    setSfxSpeed(0);
     showLyric(-1);
     clearTimeout(glimpseTimer);
     clearTimeout(markTimer);
