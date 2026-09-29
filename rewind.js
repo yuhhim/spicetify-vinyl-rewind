@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.3.0
+// VERSION: 1.4.0
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -71,22 +71,8 @@ body.vr-open > *:not(#vr-overlay) { visibility: hidden !important; }
   color: #fff; user-select: none; overflow: hidden;
   contain: strict;
 }
-#vr-overlay.open { display: flex; }
-/* opening/closing: a crumpled sheet of paper flies out of the button and unfolds (GPU only: transform + opacity) */
-#vr-overlay .vr-sheet {
-  position: absolute; left: 50%; top: 50%; z-index: 10; pointer-events: none; display: none;
-  width: var(--vr-sheet); height: var(--vr-sheet);
-  margin: calc(var(--vr-sheet) * -0.5) 0 0 calc(var(--vr-sheet) * -0.5);
-  background: radial-gradient(circle, color-mix(in srgb, var(--vr-c) 92%, #fff), var(--vr-c) 60%, color-mix(in srgb, var(--vr-c) 85%, #000));
-  will-change: transform, opacity; isolation: isolate;
-}
-#vr-overlay .vr-sheet-creases {
-  position: absolute; inset: 0; background: center / cover no-repeat; mix-blend-mode: soft-light; will-change: opacity;
-}
-#vr-overlay.folding .vr-sheet { display: block; }
-/* while folding, the real screen stays out of sight until the sheet covers it */
-#vr-overlay.folding { background: transparent; }
-#vr-overlay.folding > :not(.vr-sheet) { opacity: 0 !important; transition: none !important; } /* no transitions: a running one would override the hide */
+#vr-overlay.open { display: flex; animation: vr-fade 0.2s ease-out; }
+@keyframes vr-fade { from { opacity: 0; } to { opacity: 1; } }
 
 #vr-overlay .vr-close {
   position: absolute; top: 80px; right: 28px; width: 40px; height: 40px;
@@ -250,7 +236,6 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
 #vr-overlay .vr-volume:focus-within { width: 184px; background: rgba(255,255,255,0.12); }
 #vr-overlay .vr-volume:focus-within .vr-vol-bar { opacity: 1; }
 /* settings */
-#vr-overlay.no-texture .vr-crinkle { display: none; }
 #vr-overlay.reduce-motion, #vr-overlay.reduce-motion * { transition-duration: 0.01s !important; animation-duration: 0.01s !important; }
 .vr-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 /* Home: our card sits under Spotify's own Getting started card */
@@ -261,12 +246,6 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
 @media (prefers-reduced-motion: reduce) { .vr-home-card .vr-home-art { animation: none; } }
 .vr-home-card.reduce-motion .vr-home-art { animation: none; }
 #vr-settings .x-settings-firstColumn { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
-#vr-settings .vr-note { opacity: 0.8; }
-.vr-settings-keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin-top: 4px; }
-.vr-settings-keys kbd {
-  font: inherit; font-size: 12px; padding: 1px 6px; border-radius: 4px; white-space: nowrap;
-  background: var(--background-tinted-base, rgba(255,255,255,0.1)); color: var(--text-base, #fff); justify-self: start;
-}
 `;
   document.head.appendChild(style);
 
@@ -282,7 +261,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   overlay.setAttribute("aria-modal", "true");
   overlay.setAttribute("aria-label", "Vinyl mode");
   overlay.innerHTML = `
-    <div class="vr-crinkle"></div><div class="vr-crinkle"></div><div class="vr-sheet"><div class="vr-sheet-creases"></div></div>
+    <div class="vr-crinkle"></div><div class="vr-crinkle"></div>
     <div class="vr-lyric" aria-hidden="true"></div>
     <button class="vr-next hidden" data-act="next-record" aria-label="Next song"><img alt="" /></button>
     <button class="vr-close vr-full" data-act="fullscreen"></button>
@@ -331,9 +310,6 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   };
   const crinkleEls = [...overlay.querySelectorAll(".vr-crinkle")];
   crinkleEls.forEach((el) => (el.style.backgroundImage = `url("${crumpleTexture()}")`));
-  const sheetEl = $(".vr-sheet");
-  const sheetCreases = $(".vr-sheet-creases");
-  sheetCreases.style.backgroundImage = `url("${crumpleTexture()}")`;
   const discEl = $(".vr-disc");
   const slotEl = $(".vr-disc-slot");
   const progressEl = $(".vr-progress");
@@ -1442,101 +1418,11 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     if (isOpen) updateNextUp();
   });
 
-  // ---------- opening and closing: a crumpled sheet of paper unfolds out of the button ----------
-  // The sheet is drawn once with a jagged, crumpled outline; the animation only moves, scales and turns it
-  // and fades its creases, so the GPU does all of the work.
-  const SHEET_POINTS = 30;
-  const SHEET_INNER = 0.36; // smallest radius of the outline, as a fraction of the sheet's size
-  (() => {
-    const pts = [];
-    for (let i = 0; i < SHEET_POINTS; i++) {
-      const ang = (i / SHEET_POINTS) * Math.PI * 2 + (Math.random() - 0.5) * 0.18;
-      const r = SHEET_INNER + Math.random() * (0.5 - SHEET_INNER);
-      pts.push(`${(50 + Math.cos(ang) * r * 100).toFixed(1)}% ${(50 + Math.sin(ang) * r * 100).toFixed(1)}%`);
-    }
-    sheetEl.style.clipPath = `polygon(${pts.join(",")})`;
-  })();
-  let foldAnims = [];
-
-  function foldOrigin(from) {
-    const el = from || button.button || button.element;
-    const r = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null;
-    return r && r.width ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : { x: innerWidth / 2, y: innerHeight - 40 };
-  }
-
-  // sheet keyframes: crumpled ball at the button -> flat sheet covering the screen
-  function sheetKeyframes(o) {
-    const W = overlay.clientWidth || innerWidth;
-    const H = overlay.clientHeight || innerHeight;
-    const size = Math.max(W, H) * 0.8; // drawn at a modest size; scaled up at the end (it is covered by then)
-    overlay.style.setProperty("--vr-sheet", size + "px");
-    const full = (Math.hypot(W, H) / 2 / (SHEET_INNER * size)) * 1.04; // scale at which even the outline's dents clear the corners
-    const dx = o.x - W / 2, dy = o.y - H / 2;
-    return {
-      sheet: [
-        { offset: 0, transform: `translate(${dx}px, ${dy}px) scale(${(26 / size).toFixed(4)}) rotate(-200deg)` },
-        { offset: 0.3, transform: `translate(${dx * 0.45}px, ${dy * 0.45}px) scale(${(full * 0.16).toFixed(4)}) rotate(-80deg)` },
-        { offset: 0.65, transform: `translate(0px, 0px) scale(${(full * 0.62).toFixed(4)}) rotate(-18deg)` },
-        { offset: 1, transform: `translate(0px, 0px) scale(${full.toFixed(4)}) rotate(0deg)` },
-      ],
-      creases: [{ offset: 0, opacity: 1 }, { offset: 0.3, opacity: 0.9 }, { offset: 0.65, opacity: 0.45 }, { offset: 1, opacity: 0.08 }],
-    };
-  }
-
-  function stopFold() {
-    foldAnims.forEach((an) => an.cancel());
-    foldAnims = [];
-    overlay.classList.remove("folding");
-  }
-
-  const revealEls = () => [...overlay.children].filter((el) => !el.matches(".vr-sheet, .vr-crinkle, .vr-ghost, .vr-next, .vr-lyric"));
-
-  function playUnfold(from, done) {
-    stopFold();
-    if (settings.reduceMotion || !overlay.animate) return done();
-    const k = sheetKeyframes(foldOrigin(from));
-    overlay.classList.add("folding");
-    const sheet = sheetEl.animate(k.sheet, { duration: 760, easing: "cubic-bezier(0.3, 0.7, 0.2, 1)", fill: "forwards" });
-    const creases = sheetCreases.animate(k.creases, { duration: 760, easing: "ease-out", fill: "forwards" });
-    foldAnims = [sheet, creases];
-    sheet.finished.then(() => {
-      // the sheet now covers everything: swap it for the real screen, which fades in on top of it
-      overlay.classList.remove("folding");
-      const reveal = revealEls().map((el) => el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 320, easing: "ease-out" }));
-      const out = sheetEl.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 320, easing: "ease-out" });
-      sheetEl.style.display = "block"; // keep it drawn while it fades (the folding class is gone)
-      foldAnims = [sheet, creases, out, ...reveal];
-      out.finished.then(() => { sheetEl.style.display = ""; stopFold(); }, () => { sheetEl.style.display = ""; });
-      done();
-    }, () => {});
-  }
-
-  function playCrumple(to, done) {
-    stopFold();
-    sheetEl.style.display = "";
-    if (settings.reduceMotion || !overlay.animate) return done();
-    const k = sheetKeyframes(foldOrigin(to));
-    const flip = (frames) => frames.slice().reverse().map((fr) => ({ ...fr, offset: 1 - fr.offset }));
-    // the screen fades into the sheet, then the sheet crumples back into the button
-    const hide = revealEls().map((el) => el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 140, fill: "forwards" }));
-    sheetEl.style.display = "block";
-    const cover = sheetEl.animate([{ opacity: 0, transform: k.sheet[3].transform }, { opacity: 1, transform: k.sheet[3].transform }], { duration: 140, fill: "forwards" });
-    foldAnims = [...hide, cover];
-    cover.finished.then(() => {
-      overlay.classList.add("folding");
-      const sheet = sheetEl.animate(flip(k.sheet), { duration: 480, easing: "cubic-bezier(0.55, 0, 0.75, 0.3)", fill: "forwards" });
-      const creases = sheetCreases.animate(flip(k.creases), { duration: 480, fill: "forwards" });
-      foldAnims.push(sheet, creases);
-      sheet.finished.then(() => { sheetEl.style.display = ""; stopFold(); done(); }, () => {});
-    }, () => {});
-  }
-
   // ---------- open / close ----------
   let returnFocus = null;
 
   function applySettings() {
     overlay.classList.toggle("reduce-motion", settings.reduceMotion);
-    overlay.classList.toggle("no-texture", !settings.texture);
     if (isOpen) {
       setSpinning(!grabbing && isPlaying());
       if (settings.idle) armIdle();
@@ -1553,11 +1439,11 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     syncHomeCard();
   }
 
-  function open(from) {
+  function open() {
     if (isOpen) return;
     isOpen = true;
+    document.body.classList.add("vr-open");
     overlay.classList.add("open");
-    playUnfold(from, () => { if (isOpen) document.body.classList.add("vr-open"); });
     lastSec = lastDur = lastP = -1;
     setSpinning(isPlaying());
     // show the current song's look immediately on open; fades are only for song changes
@@ -1582,8 +1468,8 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     barUp();
     volUp();
     isOpen = false;
-    document.body.classList.remove("vr-open"); // Spotify shows again behind the crumpling sheet
-    playCrumple(null, () => { if (!isOpen) overlay.classList.remove("open"); });
+    document.body.classList.remove("vr-open");
+    overlay.classList.remove("open");
     setSpinning(false);
     cancelAnimationFrame(raf);
     window.removeEventListener("keydown", onKey, true);
@@ -1603,14 +1489,12 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
 
   // ---------- Settings > Vinyl mode ----------
   const SETTING_ROWS = [
-    ["autoOpen", "Open when music starts", "Open Vinyl mode automatically whenever you start playing music."],
-    ["reduceMotion", "Reduce motion", "Keep the record still and turn off zoom and fade animations."],
-    ["sound", "Rewind sound", "Play a soft rewind sound while you turn the record."],
-    ["idle", "Hide controls when idle", "After a few seconds without the mouse, show only the record and the progress bar."],
-    ["texture", "Background texture", "Add a faint paper texture behind the record."],
-    ["lyrics", "Lyrics when idle", "Show the current line of synced lyrics under the record when the controls are hidden."],
-    ["nextUp", "Show next song", "Show the next song as a record at the edge of the screen. Click or drag it in to skip."],
-    ["homeTip", "Show tip on Home", "Show the Vinyl mode card in Getting started."],
+    ["autoOpen", "Open Vinyl mode when music starts"],
+    ["sound", "Rewind sound while scratching"],
+    ["idle", "Hide controls when the mouse is idle"],
+    ["lyrics", "Show lyrics when controls are hidden"],
+    ["nextUp", "Show the next song at the screen edge"],
+    ["reduceMotion", "Reduce motion"],
   ];
 
   function injectSettings() {
@@ -1630,14 +1514,13 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     h.textContent = "Vinyl mode";
     sec.appendChild(h);
 
-    for (const [key, label, note] of SETTING_ROWS) {
+    for (const [key, label] of SETTING_ROWS) {
       const id = "vinyl-rewind." + key;
       const row = document.createElement("div");
       row.className = "x-settings-row";
       row.innerHTML = `
         <div class="x-settings-firstColumn">
           <label class="${labelCls}" for="${id}"></label>
-          <span class="${noteCls} vr-note"></span>
         </div>
         <div class="x-settings-secondColumn">
           <label class="x-toggle-wrapper">
@@ -1646,7 +1529,6 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
           </label>
         </div>`;
       row.querySelector("label[for]").textContent = label;
-      row.querySelector(".x-settings-firstColumn span").textContent = note;
       const input = row.querySelector("input");
       input.checked = settings[key];
       input.addEventListener("change", () => {
@@ -1662,16 +1544,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     keys.innerHTML = `
       <div class="x-settings-firstColumn">
         <span class="${labelCls}">Keyboard shortcuts</span>
-        <div class="vr-settings-keys ${noteCls}" style="margin-top: 8px">
-          <kbd>Alt + Shift + V</kbd><span>Open or close Vinyl mode</span>
-          <kbd>← →</kbd><span>Rewind / fast-forward 5 seconds (hold Shift for 15)</span>
-          <kbd>Space</kbd><span>Play / pause</span>
-          <kbd>↑ ↓</kbd><span>Volume</span>
-          <kbd>M</kbd><span>Mute</span>
-          <kbd>F</kbd><span>Full screen</span>
-          <kbd>Esc</kbd><span>Leave full screen, then close</span>
-          <kbd>Tab</kbd><span>Reach the next-song record, then Enter to skip</span>
-        </div>
+        <span class="${noteCls}">Alt + Shift + V open or close · ← → rewind or skip 5 s · Space play or pause · ↑ ↓ volume · M mute · F full screen · Esc close</span>
       </div>`;
     sec.appendChild(keys);
 
@@ -1729,7 +1602,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     if (tryBtn) {
       const inner = tryBtn.querySelector("span") || tryBtn;
       inner.textContent = "Try it";
-      tryBtn.addEventListener("click", (e) => { e.stopPropagation(); open(tryBtn); });
+      tryBtn.addEventListener("click", (e) => { e.stopPropagation(); open(); });
     }
     if (notNow) {
       notNow.removeAttribute("data-onboarding-open-checklist-trigger");

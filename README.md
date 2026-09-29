@@ -6,7 +6,6 @@ A fullscreen spinning record for Spotify. Grab the record and turn it to rewind 
 
 ## Features
 
-- **Paper unfold**: opening Vinyl mode unfolds a crumpled sheet of paper out of the button; closing crumples it back in.
 - **Scratch to scrub**: grab the record and it stops instantly. Turn it backwards to rewind, forwards to fast-forward, and let go to carry on playing. One full turn is 24 seconds of the song.
 - **Rewind sound**: a soft tape-rewind rumble that follows how fast you turn.
 - **Next record**: the next song waits just off the right edge and peeks in now and then. Move the mouse near it to bring it in, then click or drag it in to skip. Skipping rolls the current record out and the new one in.
@@ -36,7 +35,7 @@ Search for **Vinyl Rewind** in the Marketplace and install it.
 
 ## Usage
 
-Click the record icon in the playbar, press `Alt + Shift + V`, or use **Try it** on the Vinyl mode card in Home > Getting started. You can also have it open by itself whenever you start playing music (Settings > Vinyl mode > Open when music starts).
+Click the record icon in the playbar, press `Alt + Shift + V`, or use **Try it** on the Vinyl mode card in Home > Getting started. You can also have it open by itself whenever you start playing music (Settings > Vinyl mode).
 
 | Action | Result |
 | --- | --- |
@@ -61,16 +60,16 @@ Click the record icon in the playbar, press `Alt + Shift + V`, or use **Try it**
 
 Open Spotify **Settings** and scroll to **Vinyl mode**.
 
-| Setting | Default | What it does |
-| --- | --- | --- |
-| Open when music starts | Off | Opens Vinyl mode whenever you start playing music |
-| Reduce motion | Follows your system | Keeps the record still and turns off zoom and fade animations |
-| Rewind sound | On | Soft rewind sound while you turn the record |
-| Hide controls when idle | On | Shows only the record and progress bar when the mouse is still |
-| Background texture | On | Faint paper texture behind the record |
-| Show tip on Home | On | The Vinyl mode card in Getting started |
-| Lyrics when idle | On | The current line of synced lyrics under the record when the controls are hidden |
-| Show next song | On | The next song as a record at the right edge |
+| Setting | Default |
+| --- | --- |
+| Open Vinyl mode when music starts | Off |
+| Rewind sound while scratching | On |
+| Hide controls when the mouse is idle | On |
+| Show lyrics when controls are hidden | On |
+| Show the next song at the screen edge | On |
+| Reduce motion | Follows your system |
+
+The Home card can be dismissed with **Not now**.
 
 Scratching is turned off automatically when Spotify doesn't allow seeking (ads, some radio and DJ sessions), and controls that aren't available in the current context are dimmed.
 
