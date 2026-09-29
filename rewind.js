@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.1.1
+// VERSION: 1.2.0
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -28,6 +28,7 @@
     homeTip: true,
     lyrics: true,
     nextUp: true,
+    autoOpen: false,
   };
   const settings = { ...SETTINGS_DEFAULTS };
   try {
@@ -1252,8 +1253,19 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     if (isOpen) updateTrack();
     else setTimeout(preloadUpcoming, 300);
   });
+  // remember whether music was playing, so "Open when music starts" only reacts to paused -> playing
+  let lastKnownPlaying = false;
+  try { lastKnownPlaying = Spicetify.Player.isPlaying(); } catch {}
+
   Spicetify.Player.addEventListener("onplaypause", () => {
-    if (!isOpen) return;
+    let playing = false;
+    try { playing = Spicetify.Player.isPlaying(); } catch {}
+    const started = playing && !lastKnownPlaying;
+    lastKnownPlaying = playing;
+    if (!isOpen) {
+      if (started && settings.autoOpen) open();
+      return;
+    }
     if (!grabbing) setSpinning(isPlaying());
     updateButtons();
   });
@@ -1485,6 +1497,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
 
   // ---------- Settings > Vinyl mode ----------
   const SETTING_ROWS = [
+    ["autoOpen", "Open when music starts", "Open Vinyl mode automatically whenever you start playing music."],
     ["reduceMotion", "Reduce motion", "Keep the record still and turn off zoom and fade animations."],
     ["sound", "Rewind sound", "Play a soft rewind sound while you turn the record."],
     ["idle", "Hide controls when idle", "After a few seconds without the mouse, show only the record and the progress bar."],

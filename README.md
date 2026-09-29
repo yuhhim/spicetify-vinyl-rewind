@@ -35,7 +35,7 @@ Search for **Vinyl Rewind** in the Marketplace and install it.
 
 ## Usage
 
-Click the record icon in the playbar, press `Alt + Shift + V`, or use **Try it** on the Vinyl mode card in Home > Getting started.
+Click the record icon in the playbar, press `Alt + Shift + V`, or use **Try it** on the Vinyl mode card in Home > Getting started. You can also have it open by itself whenever you start playing music (Settings > Vinyl mode > Open when music starts).
 
 | Action | Result |
 | --- | --- |
@@ -62,6 +62,7 @@ Open Spotify **Settings** and scroll to **Vinyl mode**.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
+| Open when music starts | Off | Opens Vinyl mode whenever you start playing music |
 | Reduce motion | Follows your system | Keeps the record still and turns off zoom and fade animations |
 | Rewind sound | On | Soft rewind sound while you turn the record |
 | Hide controls when idle | On | Shows only the record and progress bar when the mouse is still |
