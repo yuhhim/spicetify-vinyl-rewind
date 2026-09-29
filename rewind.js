@@ -1,11 +1,11 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.7.7.1
+// VERSION: 1.7.8.0
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
   const ButtonApi = window.Spicetify && ((Spicetify.Playbar && Spicetify.Playbar.Button) || (Spicetify.Topbar && Spicetify.Topbar.Button));
-  if (!window.Spicetify || !Spicetify.Player || !Spicetify.Player.origin || !Spicetify.SVGIcons || !ButtonApi || !document.body) {
+  if (!window.Spicetify || !Spicetify.Player || !Spicetify.Player.origin || !ButtonApi || !document.body) {
     setTimeout(VinylRewind, 300);
     return;
   }
@@ -298,8 +298,24 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
 `;
   document.head.appendChild(style);
 
+  // Spotify's own icons are used when they exist; these simple stand-ins keep every button visible if a future
+  // Spotify renames or drops one
+  const FALLBACK_ICONS = {
+    x: "M3.3 2.2 8 6.9l4.7-4.7 1.1 1.1L9.1 8l4.7 4.7-1.1 1.1L8 9.1l-4.7 4.7-1.1-1.1L6.9 8 2.2 3.3z",
+    play: "M4 2.3v11.4L13.8 8z",
+    pause: "M3.5 2h3v12h-3zM9.5 2h3v12h-3z",
+    "skip-back": "M2.5 2H4v12H2.5zM13.5 2.5v11L5 8z",
+    "skip-forward": "M12 2h1.5v12H12zM2.5 2.5v11L11 8z",
+    shuffle: "M11.5 1.5 14.5 4l-3 2.5V4.8h-.6c-.9 0-1.7.4-2.2 1.1L5.4 10.5c-.8 1.1-2 1.7-3.3 1.7H1v-1.5h1.1c.8 0 1.5-.4 2-1l3.3-4.6c.8-1.1 2.1-1.8 3.5-1.8h.6zM1 3.8h1.1c1.3 0 2.5.6 3.3 1.7l.4.6-.9 1.2-.7-.9c-.5-.7-1.3-1.1-2.1-1.1H1zm8.1 6 .9-1.2.7.9c.5.7 1.3 1.1 2.1 1.1h.7V9l3 2.5-3 2.5v-1.7h-.7c-1.4 0-2.6-.7-3.4-1.8z",
+    repeat: "M1 8V7a4 4 0 0 1 4-4h6.5V1.5l3 2.5-3 2.5V4.5H5A2.5 2.5 0 0 0 2.5 7v1zM15 8v1a4 4 0 0 1-4 4H4.5v1.5l-3-2.5 3-2.5v1.5H11A2.5 2.5 0 0 0 13.5 9V8z",
+    "repeat-once": "M1 8V7a4 4 0 0 1 4-4h6.5V1.5l3 2.5-3 2.5V4.5H5A2.5 2.5 0 0 0 2.5 7v1zM15 8v1a4 4 0 0 1-4 4H4.5v1.5l-3-2.5 3-2.5v1.5H11A2.5 2.5 0 0 0 13.5 9V8zM7.3 5.8h1.4v4.4H7.3z",
+    volume: "M1 5.5h3L8 2v12l-4-3.5H1zM10.2 5.2a4 4 0 0 1 0 5.6l-1-1a2.6 2.6 0 0 0 0-3.6zM12.3 3.1a7 7 0 0 1 0 9.8l-1-1a5.6 5.6 0 0 0 0-7.8z",
+    "volume-two-wave": "M1 5.5h3L8 2v12l-4-3.5H1zM10.2 5.2a4 4 0 0 1 0 5.6l-1-1a2.6 2.6 0 0 0 0-3.6zM12.3 3.1a7 7 0 0 1 0 9.8l-1-1a5.6 5.6 0 0 0 0-7.8z",
+    "volume-one-wave": "M1 5.5h3L8 2v12l-4-3.5H1zM10.2 5.2a4 4 0 0 1 0 5.6l-1-1a2.6 2.6 0 0 0 0-3.6z",
+    "volume-off": "M1 5.5h3L8 2v12l-4-3.5H1zM10 5.9l1-1 1.6 1.6 1.6-1.6 1 1-1.6 1.6 1.6 1.6-1 1-1.6-1.6-1.6 1.6-1-1 1.6-1.6z",
+  };
   const icon = (name, size) =>
-    `<svg width="${size}" height="${size}" viewBox="0 0 16 16" fill="currentColor">${Spicetify.SVGIcons[name] || ""}</svg>`;
+    `<svg width="${size}" height="${size}" viewBox="0 0 16 16" fill="currentColor">${(Spicetify.SVGIcons && Spicetify.SVGIcons[name]) || (FALLBACK_ICONS[name] ? `<path d="${FALLBACK_ICONS[name]}"/>` : "")}</svg>`;
   const FS_ENTER = `<svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M1 1h5v1.5H2.5V6H1V1zm9 0h5v5h-1.5V2.5H10V1zM1 10h1.5v3.5H6V15H1v-5zm13.5 0H15v5h-5v-1.5h3.5V10z"/></svg>`;
   const FS_EXIT = `<svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 1H6v5H1V4.5h3.5V1zm5 0H11v3.5h3.5V6h-5V1zM1 10h5v5H4.5v-3.5H1V10zm8.5 0h5v1.5H11V15H9.5v-5z"/></svg>`;
 
