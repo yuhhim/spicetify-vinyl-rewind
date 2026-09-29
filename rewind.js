@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.4.2
+// VERSION: 1.4.3
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -1051,10 +1051,13 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   function angleAt(e) {
     if (!discCenter || !grabbing) {
       const r = discEl.getBoundingClientRect();
-      discCenter = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      discCenter = { x: r.left + r.width / 2, y: r.top + r.height / 2, radius: r.width / 2 };
     }
     return (Math.atan2(e.clientY - discCenter.y, e.clientX - discCenter.x) * 180) / Math.PI;
   }
+
+  // right at the spindle a tiny hand movement is a huge angle change: ignore that spot
+  const nearSpindle = (e) => Math.hypot(e.clientX - discCenter.x, e.clientY - discCenter.y) < discCenter.radius * 0.07;
 
   let grabStartPos = 0;
 
@@ -1081,14 +1084,19 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     lastMoveAt = 0;
   });
 
-  discEl.addEventListener("pointermove", (e) => {
+  // pointerrawupdate delivers every mouse report as it happens (not batched per frame), so the record
+  // always shows the hand's latest position; plain pointermove is the fallback
+  const RAW_MOVES = "onpointerrawupdate" in discEl;
+  discEl.addEventListener(RAW_MOVES ? "pointerrawupdate" : "pointermove", (e) => {
     if (!grabbing) return;
     const a = angleAt(e);
+    if (nearSpindle(e)) { pointerAngle = a; return; }
     let d = a - pointerAngle;
     if (d > 180) d -= 360;
     if (d < -180) d += 360;
     pointerAngle = a;
     if (d === 0) return;
+    d = Math.max(-90, Math.min(90, d)); // one report can never whip the record round
 
     const next = clampPos(vPos + d / DEG_PER_SEC);
     const applied = (next - vPos) * DEG_PER_SEC; // the record "sticks" at the start/end of the song
