@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.5.0
+// VERSION: 1.5.1
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -65,7 +65,8 @@ body.vr-open > *:not(#vr-overlay) { display: none !important; }
 #vr-overlay {
   --vr-c: #2a5db0;
   transition: --vr-c 0.9s ease;
-  --D: min(58vh, 72vw);
+  /* record size: fits the width, and leaves room below for the title, progress bar and controls */
+  --D: min(58vh, 72vw, calc((100vh - 270px) / 1.1));
   position: fixed; inset: 0; z-index: 99999;
   display: none; flex-direction: column; align-items: center; justify-content: center;
   background:
@@ -197,6 +198,14 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
 }
 #vr-overlay .vr-volume:hover .vr-vol-bar, #vr-overlay .vr-volume.dragging .vr-vol-bar { opacity: 1; }
 #vr-overlay svg { display: block; }
+/* short windows: a little tighter so the record can stay large */
+@media (max-height: 680px) {
+  #vr-overlay .vr-title { font-size: 26px; }
+  #vr-overlay .vr-artist { font-size: 17px; }
+  #vr-overlay .vr-progress { margin-top: 14px; }
+  #vr-overlay .vr-controls { margin-top: 10px; gap: 30px; }
+  #vr-overlay .vr-play { width: 68px; height: 68px; }
+}
 /* synced lyric line, shown under the record in idle mode */
 #vr-overlay .vr-lyric {
   position: absolute; left: 10vw; right: 10vw; top: 0; text-align: center; pointer-events: none;
