@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.7.1.1
+// VERSION: 1.7.2.0
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -120,6 +120,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   position: absolute; inset: 0; border-radius: 50%;
   will-change: transform; backface-visibility: hidden; transform: translateZ(0);
 }
+#vr-overlay .vr-spin .vr-old-cover { position: absolute; inset: 0; opacity: 0; }
 #vr-overlay .vr-spin img {
   width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 50%;
   pointer-events: none; -webkit-user-drag: none;
@@ -291,6 +292,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     <div class="vr-disc-slot"><div class="vr-disc" tabindex="0" role="slider" aria-label="Record. Turn to rewind or fast-forward" aria-valuemin="0">
       <div class="vr-spin">
         <img alt="" />
+        <img alt="" class="vr-old-cover" aria-hidden="true" />
       </div>
       <div class="vr-hole"></div>
     </div></div>
@@ -342,6 +344,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   const nextImg = $(".vr-next img");
   const spinEl = $(".vr-spin");
   const coverImg = $(".vr-spin img");
+  const oldCoverImg = $(".vr-spin .vr-old-cover");
   const titleEl = $(".vr-title");
   const artistEl = $(".vr-artist");
   const titleText = textSlot(titleEl);
@@ -537,6 +540,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     artistText.data = artist;
     const uri = item && item.uri;
     if (cover) {
+      if (coverImg.src !== cover.src) crossfadeCover();
       coverImg.src = cover.src;
       showCover(true);
       applyLook(uri, cover.color);
@@ -724,6 +728,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   function startSwap(dir) {
     if (!isOpen || settings.reduceMotion) return;
     endSwap();
+    if (fadeAnim) { fadeAnim.cancel(); fadeAnim = null; }
     const r = discEl.getBoundingClientRect();
     const o = overlay.getBoundingClientRect();
     ghostEl.style.cssText = `left:${r.left - o.left}px;top:${r.top - o.top}px;width:${r.width}px;height:${r.height}px`;
@@ -836,6 +841,18 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
       takeNext();
     }
   });
+
+  // A song that changes by itself (not a skip): the old cover fades out over the new one. The old cover is
+  // a second layer inside the spinning record, so it always matches the record's size, position and turn.
+  let fadeAnim = null;
+  function crossfadeCover() {
+    if (!isOpen || swap || settings.reduceMotion || overlay.classList.contains("vr-instant")) return;
+    if (!coverImg.src || coverImg.style.visibility === "hidden") return;
+    if (fadeAnim) fadeAnim.cancel();
+    oldCoverImg.src = coverImg.src;
+    const anim = (fadeAnim = oldCoverImg.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 550, easing: "ease-out" }));
+    anim.finished.then(() => { if (fadeAnim === anim) fadeAnim = null; }, () => {});
+  }
 
   function showCover(on) {
     coverImg.style.visibility = on ? "" : "hidden";
