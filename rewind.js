@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.7.10.1
+// VERSION: 1.7.10.2
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -1050,8 +1050,15 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     el.innerHTML = icon(name, size);
   }
 
+  // a control's name and state change only with it, so these writes are rare
+  function setLabel(el, label) {
+    if (el.getAttribute("aria-label") === label) return;
+    el.setAttribute("aria-label", label);
+    el.title = label;
+  }
   function renderPlayButton(playing) {
     setIcon(playBtn, playing ? "pause" : "play", 32);
+    setLabel(playBtn, playing ? "Pause" : "Play");
   }
 
   function updateButtons() {
@@ -1060,10 +1067,13 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     const sh = Spicetify.Player.getShuffle();
     shuffleBtn.classList.toggle("on", !!sh);
     shuffleBtn.classList.toggle("off", !sh);
+    shuffleBtn.setAttribute("aria-pressed", String(!!sh)); // screen readers hear "on" / "off"
     const rp = Spicetify.Player.getRepeat();
     setIcon(repeatBtn, rp === 2 ? "repeat-once" : "repeat", 26);
     repeatBtn.classList.toggle("on", rp > 0);
     repeatBtn.classList.toggle("off", rp === 0);
+    repeatBtn.setAttribute("aria-pressed", String(rp > 0));
+    setLabel(repeatBtn, rp === 2 ? "Repeat one" : "Repeat");
   }
 
   // ---------- rewind sound: soft, low tape-rewind rumble that follows the hand's speed ----------
