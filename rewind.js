@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.7.11.0
+// VERSION: 1.7.11.1
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -1344,6 +1344,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
   const nearSpindle = (e) => Math.hypot(e.clientX - discCenter.x, e.clientY - discCenter.y) < discCenter.radius * 0.07;
 
   let grabStartPos = 0;
+  let grabUri = null; // the song under the hand; letting go never seeks inside a different one
 
   discEl.addEventListener("pointerdown", (e) => {
     if (e.button !== 0 || grabbing || swap) return;
@@ -1361,6 +1362,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
     discCenter = null; // re-measure for this grab
     wasPlaying = isPlaying();
     vPos = grabStartPos = displayPos();
+    grabUri = (currentItem() || {}).uri || null;
     if (wasPlaying) setPlaying(false);
     grabbing = true;
     handVel = 0;
@@ -1403,7 +1405,10 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
     layoutIdle();
     wake();
     setSfxSpeed(0);
-    if (seek && Math.abs(vPos - grabStartPos) > 0.05) seekTo(vPos); // a plain tap should not stutter the audio
+    // a plain tap should not stutter the audio, and a song that changed under the hand (even before Spotify
+    // announced it) must not get the old song's position
+    const sameSong = ((currentItem() || {}).uri || null) === grabUri;
+    if (seek && sameSong && Math.abs(vPos - grabStartPos) > 0.05) seekTo(vPos);
     if (wasPlaying) {
       setSpinning(true); // let go: back to full speed instantly
       setPlaying(true);
