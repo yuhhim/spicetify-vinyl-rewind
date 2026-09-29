@@ -12,7 +12,7 @@ A fullscreen spinning record for Spotify. Grab the record and turn it to rewind 
 - **Synced lyrics**: when the controls are hidden, the current lyric line shows under the record.
 - **Album colors**: the background takes its color from the cover art, with a faint paper texture that changes with every song. Both fade smoothly when the track changes.
 - **Idle mode**: leave the mouse alone for 3 seconds and the record takes center stage; everything except the progress bar fades away. When a new song starts, its name shows for a moment.
-- **Full controls**: progress bar (hover it to see the time at any point), shuffle, previous, play/pause, next, repeat, and a volume control that expands on hover. Click the title or artist to jump to the album or artist page.
+- **Full controls**: progress bar (hover it to see the time at any point; click the song length to show the time left instead), shuffle, previous, play/pause, next, repeat, and a volume control that expands on hover. Click the title or artist to jump to the album or artist page.
 - **Built in**: a Vinyl mode section in Spotify's Settings (or right-click the record button for quick settings), a card in Home > Getting started, and full keyboard control.
 
 ## Install

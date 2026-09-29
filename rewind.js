@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.7.9.1
+// VERSION: 1.7.10.0
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -29,6 +29,7 @@
     lyrics: true,
     nextUp: true,
     autoOpen: false,
+    remaining: false, // click the song length to show the time left instead (like Spotify's own bar)
   };
   const settings = { ...SETTINGS_DEFAULTS };
   try {
@@ -176,6 +177,8 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
 
 #vr-overlay .vr-progress { display: flex; align-items: center; gap: 16px; margin-top: 22px; width: min(700px, 86vw); }
 #vr-overlay .vr-time { font-size: 17px; font-variant-numeric: tabular-nums; min-width: 44px; opacity: 0.95; }
+#vr-overlay .vr-time.dur { cursor: pointer; border-radius: 4px; }
+#vr-overlay .vr-time.dur:hover { opacity: 1; text-decoration: underline; }
 #vr-overlay .vr-time.cur { text-align: right; }
 #vr-overlay .vr-bar { position: relative; flex: 1; height: 20px; cursor: pointer; touch-action: none; }
 #vr-overlay .vr-track, #vr-overlay .vr-fill {
@@ -279,10 +282,10 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
 #vr-overlay .vr-ghost-spin { position: absolute; inset: 0; border-radius: 50%; overflow: hidden; background: #111; }
 #vr-overlay .vr-ghost-spin img { width: 100%; height: 100%; object-fit: cover; display: block; }
 /* keyboard focus */
-#vr-overlay button:focus-visible, #vr-overlay .vr-meta [data-href]:focus-visible, #vr-overlay .vr-disc:focus-visible, #vr-overlay .vr-bar:focus-visible, #vr-overlay .vr-vol-bar:focus-visible {
+#vr-overlay button:focus-visible, #vr-overlay .vr-meta [data-href]:focus-visible, #vr-overlay .vr-time.dur:focus-visible, #vr-overlay .vr-disc:focus-visible, #vr-overlay .vr-bar:focus-visible, #vr-overlay .vr-vol-bar:focus-visible {
   outline: 2px solid #fff; outline-offset: 4px;
 }
-#vr-overlay button:focus:not(:focus-visible), #vr-overlay .vr-meta [data-href]:focus:not(:focus-visible), #vr-overlay .vr-disc:focus:not(:focus-visible), #vr-overlay .vr-bar:focus:not(:focus-visible) { outline: none; }
+#vr-overlay button:focus:not(:focus-visible), #vr-overlay .vr-meta [data-href]:focus:not(:focus-visible), #vr-overlay .vr-time.dur:focus:not(:focus-visible), #vr-overlay .vr-disc:focus:not(:focus-visible), #vr-overlay .vr-bar:focus:not(:focus-visible) { outline: none; }
 #vr-overlay .vr-volume:focus-within { width: 184px; background: rgba(255,255,255,0.12); }
 #vr-overlay .vr-volume:focus-within .vr-vol-bar { opacity: 1; }
 /* settings */
@@ -369,7 +372,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
         <div class="vr-thumb-rail"><div class="vr-thumb"></div></div>
         <div class="vr-bar-tip" aria-hidden="true">0:00</div>
       </div>
-      <span class="vr-time dur">0:00</span>
+      <span class="vr-time dur" role="button" tabindex="0">0:00</span>
     </div>
     <div class="vr-controls">
       <button class="vr-ctl" data-act="shuffle" aria-label="Shuffle">${icon("shuffle", 26)}</button>
@@ -1251,6 +1254,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
     const sec = Math.floor(pos);
     if (sec !== lastSec || dur !== lastDur) {
       curText.data = fmt(pos);
+      if (settings.remaining) durText.data = "-" + fmt(Math.max(0, dur - pos));
       const text = `${fmt(pos)} of ${fmt(dur)}`;
       for (const el of [discEl, barEl]) {
         el.setAttribute("aria-valuemax", String(Math.round(dur)));
@@ -1259,7 +1263,10 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
       }
       lastSec = sec;
     }
-    if (dur !== lastDur) { durText.data = fmt(dur); lastDur = dur; }
+    if (dur !== lastDur) {
+      if (!settings.remaining) durText.data = fmt(dur);
+      lastDur = dur;
+    }
     const p = dur ? Math.min(1, Math.max(0, pos / dur)) : 0;
     if (Math.abs(p - lastP) > 0.0002) {
       fillEl.style.transform = `scaleX(${p})`;
@@ -1407,6 +1414,27 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
   barEl.addEventListener("pointerup", barUp);
   barEl.addEventListener("pointercancel", barUp);
   barEl.addEventListener("lostpointercapture", barUp);
+
+  // the song length doubles as a switch to "time left", like in Spotify's own player bar
+  function labelDuration() {
+    const label = settings.remaining ? "Show song length" : "Show time remaining";
+    durEl.title = label;
+    durEl.setAttribute("aria-label", label);
+  }
+  function toggleRemaining() {
+    settings.remaining = !settings.remaining;
+    saveSettings();
+    labelDuration();
+    lastSec = lastDur = -1; // redraw both times on the next frame
+  }
+  labelDuration();
+  durEl.addEventListener("click", toggleRemaining);
+  durEl.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    toggleRemaining();
+  });
 
   // ---------- volume ----------
   let volDrag = false;
@@ -1662,7 +1690,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
       e.stopImmediatePropagation();
       return wake();
     }
-    const focusedButton = e.target && e.target.closest && e.target.closest("#vr-overlay button, #vr-overlay [role=link]");
+    const focusedButton = e.target && e.target.closest && e.target.closest("#vr-overlay button, #vr-overlay [role=link], #vr-overlay [role=button]");
     let handled = true;
     switch (e.key) {
       case "Escape":
