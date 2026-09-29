@@ -79,7 +79,7 @@ Scratching is turned off automatically when Spotify doesn't allow seeking (ads, 
 
 ## Performance
 
-The record spins on the GPU, so it stays smooth at your display's full refresh rate, and it follows your mouse as fast as the mouse reports. Song changes and scratching are free of long stalls, even when skipping quickly. While Vinyl mode is open, Spotify's hidden interface is paused out of layout; while it is closed, Vinyl Rewind does no work at all.
+The record spins on the GPU, so it stays smooth at your display's full refresh rate, and it follows your mouse as fast as the mouse reports. The rewind sound is made on its own audio thread, so it never stutters. Song changes and scratching are free of long stalls, even when skipping quickly. While Vinyl mode is open, Spotify's hidden interface is paused out of layout; while it is closed, Vinyl Rewind does no work at all.
 
 ## Uninstall
 
