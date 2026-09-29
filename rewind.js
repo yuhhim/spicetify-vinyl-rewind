@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.7.4.1
+// VERSION: 1.7.5.0
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -431,6 +431,16 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   // Dominant color of the cover (favoring colorful areas), clamped so white text stays readable.
   // one small CPU-side canvas, reused for every cover
   let colorCtx = null;
+  // relative luminance (WCAG) of an HSL color, all values 0..1
+  function luminance(h, s, l) {
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs(((h * 6) % 2) - 1));
+    const m = l - c / 2;
+    const [r, g, b] = [[c, x, 0], [x, c, 0], [0, c, x], [0, x, c], [x, 0, c], [c, 0, x]][Math.floor(h * 6) % 6];
+    const lin = (v) => (v + m <= 0.04045 ? (v + m) / 12.92 : Math.pow((v + m + 0.055) / 1.055, 2.4));
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  }
+
   function dominantColor(bmp) {
     if (!colorCtx) {
       const c = document.createElement("canvas");
@@ -456,6 +466,9 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     let [h, s, l] = rgbToHsl(best.r / best.n, best.g / best.n, best.b / best.n);
     l = Math.min(0.46, Math.max(0.2, l));
     s = Math.min(0.85, s);
+    // bright hues (yellow, green, cyan) look far lighter than their HSL lightness says: darken them just enough
+    // that the white title, artist and times stay readable (about 3.5:1 contrast)
+    while (l > 0.2 && luminance(h, s, l) > 0.25) l -= 0.01;
     return `hsl(${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%)`;
   }
 
