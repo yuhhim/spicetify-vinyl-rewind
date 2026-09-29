@@ -1,21 +1,34 @@
 # The Spicetify Marketplace loads rewind.js through jsDelivr, which caches it.
 # Purge that cache on every push so updates reach users on their next Spotify launch.
+# jsDelivr throttles repeated purges of the same file; when that happens, wait it out and purge again.
 name: Purge jsDelivr cache
 
 on:
   push:
     branches: [main]
     paths: ["rewind.js", "manifest.json", "README.md", "preview.webp"]
+  workflow_dispatch:
 
 permissions: {}
+
+concurrency:
+  group: purge-cdn
+  cancel-in-progress: true
 
 jobs:
   purge:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Purge
         run: |
           for f in rewind.js manifest.json README.md preview.webp; do
-            curl -fsS --retry 3 "https://purge.jsdelivr.net/gh/${GITHUB_REPOSITORY}@main/$f" > /dev/null
-            echo "purged $f"
+            path="/gh/${GITHUB_REPOSITORY}@main/$f"
+            for attempt in 1 2 3; do
+              res=$(curl -fsS --retry 3 "https://purge.jsdelivr.net$path")
+              wait=$(echo "$res" | jq -r --arg p "$path" '.paths[$p] | if .throttled then .throttlingReset else 0 end')
+              if [ "${wait:-0}" -eq 0 ]; then echo "purged $f"; break; fi
+              echo "$f throttled, retrying in ${wait}s"
+              sleep $(( wait + 5 ))
+            done
           done
