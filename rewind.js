@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.4.3
+// VERSION: 1.5.0
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -1305,6 +1305,25 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     seekTo(to);
   }
 
+  // Scroll over the record to nudge it: down (clockwise) goes forward, up rewinds; one wheel notch = 2 s.
+  // The record turns with every scroll event; Spotify gets one seek at the end of a burst.
+  let wheelTarget = null;
+  let wheelTimer = 0;
+  discEl.addEventListener("wheel", (e) => {
+    if (grabbing || swap || !canScratch()) return;
+    e.preventDefault();
+    const px = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaMode === 2 ? e.deltaY * 800 : e.deltaY;
+    const from = wheelTarget !== null ? wheelTarget : displayPos();
+    const to = clampPos(from + (px / 100) * 2);
+    setAngle(getAngle() + (to - from) * DEG_PER_SEC);
+    wheelTarget = to;
+    clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(() => {
+      if (wheelTarget !== null) seekTo(wheelTarget);
+      wheelTarget = null;
+    }, 140);
+  }, { passive: false });
+
   function isTyping(e) {
     const t = e.target;
     return !!(t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)));
@@ -1345,6 +1364,14 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
       case "f":
       case "F":
         toggleFullscreen();
+        break;
+      case "n":
+      case "N":
+        skip(1);
+        break;
+      case "p":
+      case "P":
+        skip(-1);
         break;
       default:
         handled = false;
@@ -1593,7 +1620,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     keys.innerHTML = `
       <div class="x-settings-firstColumn">
         <span class="${labelCls}">Keyboard shortcuts</span>
-        <span class="${noteCls}">Alt + Shift + V open or close · ← → rewind or skip 5 s · Space play or pause · ↑ ↓ volume · M mute · F full screen · Esc close</span>
+        <span class="${noteCls}">Alt + Shift + V open or close · ← → or scroll on the record to rewind / skip ahead · N P next / previous song · Space play or pause · ↑ ↓ volume · M mute · F full screen · Esc close</span>
       </div>`;
     sec.appendChild(keys);
 

@@ -42,6 +42,7 @@ Click the record icon in the playbar, press `Alt + Shift + V`, or use **Try it**
 | Grab the record | Stops it (and the music) |
 | Turn it backwards / forwards | Rewind / fast-forward |
 | Let go | Music continues from the new spot |
+| Scroll over the record | Nudge it: down skips ahead, up rewinds (2 s per notch) |
 
 ### Keyboard
 
@@ -49,6 +50,7 @@ Click the record icon in the playbar, press `Alt + Shift + V`, or use **Try it**
 | --- | --- |
 | `Alt + Shift + V` | Open or close Vinyl mode |
 | `←` / `→` | Rewind / fast-forward 5 seconds (hold `Shift` for 15) |
+| `N` / `P` | Next / previous song |
 | `Space` | Play / pause |
 | `↑` / `↓` | Volume |
 | `M` | Mute |
