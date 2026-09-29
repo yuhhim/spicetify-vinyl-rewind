@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.7.10.2
+// VERSION: 1.7.10.3
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -375,10 +375,10 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
       <span class="vr-time dur" role="button" tabindex="0">0:00</span>
     </div>
     <div class="vr-controls">
-      <button class="vr-ctl" data-act="shuffle" aria-label="Shuffle">${icon("shuffle", 26)}</button>
-      <button class="vr-ctl" data-act="prev" aria-label="Previous">${icon("skip-back", 30)}</button>
+      <button class="vr-ctl" data-act="shuffle" aria-label="Shuffle" title="Shuffle">${icon("shuffle", 26)}</button>
+      <button class="vr-ctl" data-act="prev" aria-label="Previous" title="Previous">${icon("skip-back", 30)}</button>
       <button class="vr-ctl vr-play" data-act="play" aria-label="Play/Pause"></button>
-      <button class="vr-ctl" data-act="next" aria-label="Next">${icon("skip-forward", 30)}</button>
+      <button class="vr-ctl" data-act="next" aria-label="Next" title="Next">${icon("skip-forward", 30)}</button>
       <button class="vr-ctl" data-act="repeat" aria-label="Repeat">${icon("repeat", 26)}</button>
       <div class="vr-volume">
       <button class="vr-vol-btn" data-act="mute" aria-label="Mute"></button>
@@ -1052,7 +1052,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
 
   // a control's name and state change only with it, so these writes are rare
   function setLabel(el, label) {
-    if (el.getAttribute("aria-label") === label) return;
+    if (el.getAttribute("aria-label") === label && el.title === label) return;
     el.setAttribute("aria-label", label);
     el.title = label;
   }
