@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.7.1
+// VERSION: 1.7.1.1
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -391,8 +391,13 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     return d ? d.item || d.track : null;
   }
 
-  function imageUrl(meta) {
-    const raw = meta && (meta.image_xlarge_url || meta.image_large_url || meta.image_url);
+  // cover of a player item: the metadata fields first, then Spotify's structured images list (future-proofing)
+  function imageUrl(meta, item) {
+    let raw = meta && (meta.image_xlarge_url || meta.image_large_url || meta.image_url);
+    if (!raw && item && Array.isArray(item.images) && item.images.length) {
+      const pick = (label) => item.images.find((im) => im && im.label === label);
+      raw = (pick("xlarge") || pick("large") || item.images[item.images.length - 1] || {}).url;
+    }
     if (!raw) return "";
     return raw.startsWith("spotify:image:") ? "https://i.scdn.co/image/" + raw.slice(14) : raw;
   }
@@ -478,7 +483,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     ];
     const seen = new Set();
     for (const it of items) {
-      const url = imageUrl((it && it.metadata) || null);
+      const url = imageUrl((it && it.metadata) || null, it);
       if (!url || seen.has(url)) continue;
       seen.add(url);
       loadCover(url).catch(() => {});
@@ -514,8 +519,9 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     const item = currentItem();
     const meta = (item && item.metadata) || {};
     const title = meta.title || (item && item.name) || "Nothing playing";
-    const artist = meta.artist_name || meta.album_title || meta.show_name || "";
-    const url = imageUrl(meta);
+    const artists = item && Array.isArray(item.artists) ? item.artists.map((a) => a && a.name).filter(Boolean).join(", ") : "";
+    const artist = meta.artist_name || artists || meta.album_title || meta.show_name || "";
+    const url = imageUrl(meta, item);
     const token = ++trackToken;
 
     let cover = null;
@@ -658,7 +664,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
 
   function updateNextUp() {
     const it = nextItem();
-    const url = it && imageUrl(it.metadata);
+    const url = it && imageUrl(it.metadata, it);
     const r = restrictions();
     const roomy = overlay.clientWidth > slotEl.offsetWidth * 1.9;
     const quiet = performance.now() < nextQuietUntil;
