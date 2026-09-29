@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.7.12.0
+// VERSION: 1.7.12.1
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -1382,6 +1382,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
     if (e.button !== 0 || grabbing || swap) return;
     e.preventDefault();
     if (!canScratch()) return;
+    sendNudge(); // a nudge still on its way lands before the hand takes over
     // hold the record exactly where it is (it may be mid-way through the idle zoom) so it cannot slide out from under the hand
     const here = getComputedStyle(discEl).transform;
     discEl.style.transition = "none";
@@ -1611,6 +1612,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
       startSwap(-1); // runs before updateTrack, so the outgoing record still shows the old cover
     }
     if (grabbing) release(null, false); // the position being scrubbed belongs to the old song
+    dropNudge(); // so does a nudge that hasn't reached Spotify yet
     barDrag = null;
     if (isOpen) updateTrack(); // (covers for upcoming songs are only preloaded while Vinyl mode is open)
   });
@@ -1653,30 +1655,48 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
 
   // Rewind / fast-forward from the keyboard; the record turns by the same amount.
   function stepSeek(delta) {
-    if (!canScratch()) return;
-    const from = displayPos();
+    if (!canScratch() || grabbing) return;
+    nudge(delta);
+  }
+
+  // Nudging (arrow keys, scrolling over the record): the record and the times move on every step, but
+  // Spotify is asked to seek at most about 3 times a second, always ending on the latest spot. A lone
+  // nudge goes to Spotify straight away. (Holding an arrow key used to send a seek per key repeat.)
+  let nudgeTarget = null; // where the record has been turned to, not yet sent to Spotify
+  let nudgeTimer = 0;
+  let nudgeSentAt = -1e9;
+  function nudge(delta) {
+    const from = nudgeTarget !== null ? nudgeTarget : displayPos();
     const to = clampPos(from + delta);
     setAngle(getAngle() + (to - from) * DEG_PER_SEC);
+    const now = performance.now();
+    pendingPos = { pos: to, at: now, until: now + 1500 }; // show the new time right away
+    nudgeTarget = to;
+    clearTimeout(nudgeTimer);
+    if (now - nudgeSentAt > 300) return sendNudge();
+    nudgeTimer = setTimeout(sendNudge, Math.min(140, Math.max(0, nudgeSentAt + 300 - now)));
+  }
+  function sendNudge() {
+    clearTimeout(nudgeTimer);
+    nudgeTimer = 0;
+    if (nudgeTarget === null) return;
+    const to = nudgeTarget;
+    nudgeTarget = null;
+    nudgeSentAt = performance.now();
     seekTo(to);
+  }
+  function dropNudge() {
+    clearTimeout(nudgeTimer);
+    nudgeTimer = 0;
+    nudgeTarget = null;
   }
 
   // Scroll over the record to nudge it: down (clockwise) goes forward, up rewinds; one wheel notch = 2 s.
-  // The record turns with every scroll event; Spotify gets one seek at the end of a burst.
-  let wheelTarget = null;
-  let wheelTimer = 0;
   discEl.addEventListener("wheel", (e) => {
     if (grabbing || swap || !canScratch()) return;
     e.preventDefault();
     const px = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaMode === 2 ? e.deltaY * 800 : e.deltaY;
-    const from = wheelTarget !== null ? wheelTarget : displayPos();
-    const to = clampPos(from + (px / 100) * 2);
-    setAngle(getAngle() + (to - from) * DEG_PER_SEC);
-    wheelTarget = to;
-    clearTimeout(wheelTimer);
-    wheelTimer = setTimeout(() => {
-      if (wheelTarget !== null) seekTo(wheelTarget);
-      wheelTarget = null;
-    }, 140);
+    nudge((px / 100) * 2);
   }, { passive: false });
 
   // ---------- like / unlike the song (L) ----------
