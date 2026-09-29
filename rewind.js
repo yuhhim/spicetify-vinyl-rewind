@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.7.4.0
+// VERSION: 1.7.4.1
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -728,11 +728,11 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     setNear(false);
     if (dir > 0) {
       if (restrictions().canSkipNext !== false) startSwap(1);
-      Spicetify.Player.next();
+      settle(Spicetify.Player.next());
     } else {
       // Previous may just restart the song, so only roll once Spotify really changes it (see songchange)
       prevPendingUntil = performance.now() + 1500;
-      Spicetify.Player.back();
+      settle(Spicetify.Player.back());
     }
     setTimeout(updateNextUp, 900);
   }
@@ -1054,7 +1054,14 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
   }
   function setPlaying(playing) {
     intent = { playing, until: performance.now() + 1500 };
-    playing ? Spicetify.Player.play() : Spicetify.Player.pause();
+    settle(playing ? Spicetify.Player.play() : Spicetify.Player.pause());
+  }
+
+  // Spotify's player commands return promises that reject when there is nothing to do (e.g. "play" while a new
+  // song has already started playing). The state is what we wanted either way, so the refusal is not an error.
+  function settle(result) {
+    if (result && typeof result.catch === "function") result.catch(() => {});
+    return result;
   }
 
   const durationSec = () => (Spicetify.Player.getDuration() || 0) / 1000;
@@ -1069,7 +1076,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
     const pos = clampPos(sec);
     const now = performance.now();
     pendingPos = { pos, at: now, until: now + 1200 };
-    Spicetify.Player.seek(Math.round(pos * 1000));
+    settle(Spicetify.Player.seek(Math.round(pos * 1000)));
   }
 
   function displayPos() {
@@ -1292,7 +1299,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
   function flushVolume() {
     volTimer = 0;
     if (volPending === null) return;
-    Spicetify.Player.setVolume(volPending);
+    settle(Spicetify.Player.setVolume(volPending));
     volPending = null;
     volSent = performance.now();
   }
@@ -1358,8 +1365,8 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
     }
     if (act === "prev") skip(-1);
     else if (act === "next") skip(1);
-    else if (act === "shuffle") Spicetify.Player.toggleShuffle();
-    else if (act === "repeat") Spicetify.Player.toggleRepeat();
+    else if (act === "shuffle") settle(Spicetify.Player.toggleShuffle());
+    else if (act === "repeat") settle(Spicetify.Player.toggleRepeat());
     setTimeout(updateButtons, 120);
     setTimeout(updateButtons, 500);
   });
@@ -1472,7 +1479,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
         await (liked ? lib.add({ uris: [uri] }) : lib.remove({ uris: [uri] }));
       } else if (Spicetify.Player.setHeart && Spicetify.Player.getHeart) {
         liked = !Spicetify.Player.getHeart();
-        Spicetify.Player.setHeart(liked);
+        settle(Spicetify.Player.setHeart(liked));
       } else return;
       if (isOpen) popHeart(liked);
     } catch {
