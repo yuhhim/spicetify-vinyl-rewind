@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.7.2.1
+// VERSION: 1.7.3.0
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -116,6 +116,16 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
 #vr-overlay.idle .vr-meta, #vr-overlay.idle .vr-controls, #vr-overlay.idle .vr-close, #vr-overlay.idle .vr-time { opacity: 0; pointer-events: none; }
 #vr-overlay.idle, #vr-overlay.idle * { cursor: none !important; }
 #vr-overlay .vr-disc.grabbing { cursor: grabbing; }
+/* L = like: a heart pops over the middle of the record (filled = saved, outline = removed) */
+#vr-overlay .vr-heart {
+  position: absolute; left: 50%; top: 50%; z-index: 2; pointer-events: none;
+  width: 26%; height: 26%; margin: -13% 0 0 -13%; opacity: 0;
+  color: #fff; filter: drop-shadow(0 4px 18px rgba(0,0,0,0.45));
+}
+#vr-overlay .vr-heart svg { width: 100%; height: 100%; display: block; overflow: visible; }
+#vr-overlay .vr-heart path { fill: currentColor; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
+#vr-overlay .vr-heart.off path { fill: none; }
+#vr-overlay .vr-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 #vr-overlay .vr-spin {
   position: absolute; inset: 0; border-radius: 50%;
   will-change: transform; backface-visibility: hidden; transform: translateZ(0);
@@ -285,6 +295,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     <div class="vr-crinkle"></div><div class="vr-crinkle"></div>
     <div class="vr-ghost" hidden><div class="vr-ghost-spin"><img alt="" /></div><div class="vr-hole"></div></div>
     <div class="vr-lyric" aria-hidden="true"></div>
+    <div class="vr-live" role="status" aria-live="polite"></div>
     <button class="vr-next hidden" data-act="next-record" aria-label="Next song"><img alt="" /></button>
     <button class="vr-close vr-full" data-act="fullscreen"></button>
     <button class="vr-close" data-act="close" aria-label="Close" title="Close">${icon("x", 22)}</button>
@@ -294,6 +305,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
         <img alt="" class="vr-old-cover" aria-hidden="true" />
       </div>
       <div class="vr-hole"></div>
+      <div class="vr-heart" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 20.3l-1.3-1.2C6 14.9 3 12.2 3 8.9 3 6.2 5.1 4.1 7.8 4.1c1.5 0 3 .7 4.2 1.9 1.2-1.2 2.7-1.9 4.2-1.9 2.7 0 4.8 2.1 4.8 4.8 0 3.3-3 6-7.7 10.2L12 20.3z"/></svg></div>
     </div></div>
     <div class="vr-meta">
       <div class="vr-title"></div>
@@ -339,6 +351,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   const progressEl = $(".vr-progress");
   const lyricEl = $(".vr-lyric");
   const lyricText = textSlot(lyricEl);
+  const liveText = textSlot($(".vr-live")); // read out by screen readers
   const nextEl = $(".vr-next");
   const nextImg = $(".vr-next img");
   const spinEl = $(".vr-spin");
@@ -1380,6 +1393,49 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     }, 140);
   }, { passive: false });
 
+  // ---------- like / unlike the song (L) ----------
+  let heartAnim = null;
+  function popHeart(liked) {
+    const el = $(".vr-heart");
+    el.classList.toggle("off", !liked);
+    if (heartAnim) heartAnim.cancel();
+    const frames = settings.reduceMotion
+      ? [{ opacity: 0 }, { opacity: 1, offset: 0.2 }, { opacity: 1, offset: 0.7 }, { opacity: 0 }]
+      : [
+          { opacity: 0, transform: "scale(0.5)" },
+          { opacity: 1, transform: "scale(1.12)", offset: 0.22 },
+          { opacity: 1, transform: "scale(1)", offset: 0.45 },
+          { opacity: 0, transform: "scale(1.04)" },
+        ];
+    heartAnim = el.animate(frames, { duration: 950, easing: "ease-out" });
+    liveText.data = liked ? "Added to Liked Songs" : "Removed from Liked Songs";
+  }
+
+  let liking = false;
+  async function toggleLike() {
+    const item = currentItem();
+    const uri = item && item.uri;
+    if (liking || !uri || !/^spotify:(track|episode):/.test(uri) || isAd(item)) return;
+    liking = true;
+    try {
+      const lib = Spicetify.Platform && Spicetify.Platform.LibraryAPI;
+      let liked;
+      if (lib && lib.contains && lib.add && lib.remove) {
+        // ask the library itself: the player's copy of the flag can lag behind a like made elsewhere
+        const [saved] = await lib.contains(uri);
+        liked = !saved;
+        await (liked ? lib.add({ uris: [uri] }) : lib.remove({ uris: [uri] }));
+      } else if (Spicetify.Player.setHeart && Spicetify.Player.getHeart) {
+        liked = !Spicetify.Player.getHeart();
+        Spicetify.Player.setHeart(liked);
+      } else return;
+      if (isOpen) popHeart(liked);
+    } catch {
+    } finally {
+      liking = false;
+    }
+  }
+
   function isTyping(e) {
     const t = e.target;
     return !!(t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)));
@@ -1428,6 +1484,10 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
       case "p":
       case "P":
         skip(-1);
+        break;
+      case "l":
+      case "L":
+        toggleLike();
         break;
       default:
         handled = false;
@@ -1691,7 +1751,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     keys.innerHTML = `
       <div class="x-settings-firstColumn">
         <span class="${labelCls}">Keyboard shortcuts</span>
-        <span class="${noteCls}">Alt + Shift + V open or close · ← → or scroll on the record to rewind / skip ahead · N P next / previous song · Space play or pause · ↑ ↓ volume · M mute · F full screen · Esc close</span>
+        <span class="${noteCls}">Alt + Shift + V open or close · ← → or scroll on the record to rewind / skip ahead · N P next / previous song · L like · Space play or pause · ↑ ↓ volume · M mute · F full screen · Esc close</span>
       </div>`;
     sec.appendChild(keys);
 

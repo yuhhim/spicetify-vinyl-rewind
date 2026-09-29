@@ -51,6 +51,7 @@ Click the record icon in the playbar, press `Alt + Shift + V`, or use **Try it**
 | `Alt + Shift + V` | Open or close Vinyl mode |
 | `←` / `→` | Rewind / fast-forward 5 seconds (hold `Shift` for 15) |
 | `N` / `P` | Next / previous song |
+| `L` | Like or unlike the song (a heart pops on the record) |
 | `Space` | Play / pause |
 | `↑` / `↓` | Volume |
 | `M` | Mute |
