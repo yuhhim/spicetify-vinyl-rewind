@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.7.8.0
+// VERSION: 1.7.9.0
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -134,6 +134,9 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   display: inline-block; min-width: 22px; padding: 1px 7px; border-radius: 6px; box-sizing: border-box;
   background: rgba(255,255,255,0.15); font: inherit; font-size: 12.5px; font-weight: 600; text-align: center;
 }
+/* title -> album, artist -> artist page, like Spotify's own now-playing bar */
+#vr-overlay .vr-meta [data-href] { cursor: pointer; }
+#vr-overlay .vr-meta [data-href]:hover { text-decoration: underline; }
 /* L = like: a heart pops over the middle of the record (filled = saved, outline = removed) */
 #vr-overlay .vr-heart {
   position: absolute; left: 50%; top: 50%; z-index: 2; pointer-events: none;
@@ -276,10 +279,10 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
 #vr-overlay .vr-ghost-spin { position: absolute; inset: 0; border-radius: 50%; overflow: hidden; background: #111; }
 #vr-overlay .vr-ghost-spin img { width: 100%; height: 100%; object-fit: cover; display: block; }
 /* keyboard focus */
-#vr-overlay button:focus-visible, #vr-overlay .vr-disc:focus-visible, #vr-overlay .vr-bar:focus-visible, #vr-overlay .vr-vol-bar:focus-visible {
+#vr-overlay button:focus-visible, #vr-overlay .vr-meta [data-href]:focus-visible, #vr-overlay .vr-disc:focus-visible, #vr-overlay .vr-bar:focus-visible, #vr-overlay .vr-vol-bar:focus-visible {
   outline: 2px solid #fff; outline-offset: 4px;
 }
-#vr-overlay button:focus:not(:focus-visible), #vr-overlay .vr-disc:focus:not(:focus-visible), #vr-overlay .vr-bar:focus:not(:focus-visible) { outline: none; }
+#vr-overlay button:focus:not(:focus-visible), #vr-overlay .vr-meta [data-href]:focus:not(:focus-visible), #vr-overlay .vr-disc:focus:not(:focus-visible), #vr-overlay .vr-bar:focus:not(:focus-visible) { outline: none; }
 #vr-overlay .vr-volume:focus-within { width: 184px; background: rgba(255,255,255,0.12); }
 #vr-overlay .vr-volume:focus-within .vr-vol-bar { opacity: 1; }
 /* settings */
@@ -617,6 +620,8 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     // a new song while the controls are hidden: name it for a moment in the lyric line
     if (idle && titleText.data && (titleText.data !== title || artistText.data !== artist)) announceSong(artist ? title + " · " + artist : title);
     titleText.data = title;
+    setLink(titleEl, (item && item.album && item.album.uri) || meta.album_uri || (item && item.show && item.show.uri) || meta.show_uri);
+    setLink(artistEl, (item && Array.isArray(item.artists) && item.artists[0] && item.artists[0].uri) || meta.artist_uri);
     titleEl.title = title; // full text on hover when a long title is cut off
     artistText.data = artist;
     artistEl.title = artist;
@@ -639,6 +644,41 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     loadLyrics(uri);
     updateNextUp();
     setTimeout(preloadUpcoming, 300);
+  }
+
+  // the title and artist lead to their pages in Spotify (Vinyl mode closes on the way)
+  function uriPath(uri) {
+    const m = /^spotify:(album|artist|show|episode|playlist):([A-Za-z0-9]+)$/.exec(uri || "");
+    return m ? `/${m[1]}/${m[2]}` : null;
+  }
+  function setLink(el, uri) {
+    const path = uriPath(uri);
+    if (path === (el.dataset.href || null)) return;
+    if (path) {
+      el.dataset.href = path;
+      el.setAttribute("role", "link");
+      el.tabIndex = 0;
+    } else {
+      delete el.dataset.href;
+      el.removeAttribute("role");
+      el.removeAttribute("tabindex");
+    }
+  }
+  function followLink(el) {
+    const path = el && el.dataset.href;
+    if (!path || !Spicetify.Platform || !Spicetify.Platform.History) return;
+    close();
+    Spicetify.Platform.History.push(path);
+  }
+  titleEl.addEventListener("click", () => followLink(titleEl));
+  artistEl.addEventListener("click", () => followLink(artistEl));
+  for (const el of [titleEl, artistEl]) {
+    el.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      followLink(el);
+    });
   }
 
   // ---------- synced lyrics (idle mode) ----------
@@ -1620,7 +1660,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
       e.stopImmediatePropagation();
       return wake();
     }
-    const focusedButton = e.target && e.target.closest && e.target.closest("#vr-overlay button");
+    const focusedButton = e.target && e.target.closest && e.target.closest("#vr-overlay button, #vr-overlay [role=link]");
     let handled = true;
     switch (e.key) {
       case "Escape":
