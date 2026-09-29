@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.1.0
+// VERSION: 1.1.1
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -26,7 +26,6 @@
     idle: true,
     texture: true,
     homeTip: true,
-    crackle: false,
     lyrics: true,
     nextUp: true,
   };
@@ -241,8 +240,8 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
 .vr-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 /* Home: our card sits under Spotify's own Getting started card */
 .vr-home-card { margin-top: 12px; }
-.vr-home-card .vr-home-art { animation: vr-home-spin 14s linear infinite; border-radius: 50%; }
-.vr-home-card:hover .vr-home-art { animation-duration: 4s; }
+.vr-home-card .vr-home-art { border-radius: 50%; }
+.vr-home-card:hover .vr-home-art { animation: vr-home-spin 4s linear infinite; }
 @keyframes vr-home-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .vr-home-card .vr-home-art { animation: none; } }
 .vr-home-card.reduce-motion .vr-home-art { animation: none; }
@@ -308,12 +307,20 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   document.body.appendChild(overlay);
 
   const $ = (s) => overlay.querySelector(s);
+  // a Text node whose .data can change without replacing any DOM nodes
+  const textSlot = (el) => {
+    const t = document.createTextNode(el.textContent);
+    el.textContent = "";
+    el.appendChild(t);
+    return t;
+  };
   const crinkleEls = [...overlay.querySelectorAll(".vr-crinkle")];
   crinkleEls.forEach((el) => (el.style.backgroundImage = `url("${crumpleTexture()}")`));
   const discEl = $(".vr-disc");
   const slotEl = $(".vr-disc-slot");
   const progressEl = $(".vr-progress");
   const lyricEl = $(".vr-lyric");
+  const lyricText = textSlot(lyricEl);
   const nextEl = $(".vr-next");
   const nextImg = $(".vr-next img");
   const spinEl = $(".vr-spin");
@@ -322,6 +329,8 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   const artistEl = $(".vr-artist");
   const curEl = $(".vr-time.cur");
   const durEl = $(".vr-time.dur");
+  const curText = textSlot(curEl);
+  const durText = textSlot(durEl);
   const barEl = $(".vr-bar");
   const fillEl = $(".vr-fill");
   const railEl = $(".vr-thumb-rail");
@@ -422,7 +431,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
       if (coverCache.size > 24) {
         const [oldUrl, oldP] = coverCache.entries().next().value;
         coverCache.delete(oldUrl);
-        oldP.then((c) => { if (coverImg.src !== c.src) URL.revokeObjectURL(c.src); }).catch(() => {});
+        oldP.then((c) => { if (coverImg.src !== c.src && nextImg.src !== c.src) URL.revokeObjectURL(c.src); }).catch(() => {});
       }
     }
     return p;
@@ -512,14 +521,15 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
 
   // ---------- synced lyrics (idle mode) ----------
   const lyricsCache = new Map(); // track id -> Promise<[{ t, text }] | null>
-  let lyrics = { uri: null, lines: null };
+  let lyrics = { uri: null, lines: null, failedAt: 0 };
   let lyricIndex = -1;
 
   async function accessToken() {
     const P = Spicetify.Platform || {};
     try {
-      return (P.Session && P.Session.accessToken) ||
-        (P.AuthorizationAPI && P.AuthorizationAPI.getState && (await P.AuthorizationAPI.getState()).token.accessToken) || null;
+      // Spotify keeps the current (refreshed) token here; the Session copy can be missing or stale
+      const state = P.AuthorizationAPI && P.AuthorizationAPI.getState ? await P.AuthorizationAPI.getState() : null;
+      return (state && state.token && state.token.accessToken) || (P.Session && P.Session.accessToken) || null;
     } catch {
       return null;
     }
@@ -534,35 +544,40 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
       if (r.ok) return r.json();
     }
     // older Spotify versions: go through Spicetify
-    return Spicetify.CosmosAsync ? Spicetify.CosmosAsync.get(url, null, { "app-platform": "WebPlayer" }) : null;
+    if (Spicetify.CosmosAsync) return Spicetify.CosmosAsync.get(url, null, { "app-platform": "WebPlayer" });
+    throw new Error("lyrics unavailable right now");
   }
 
   function fetchLyrics(uri) {
     const id = uri && uri.startsWith("spotify:track:") ? uri.split(":")[2] : null;
     if (!id) return Promise.resolve(null);
     if (!lyricsCache.has(id)) {
-      lyricsCache.set(id, (async () => {
-        try {
-          const res = await requestLyrics(id);
-          const l = res && res.lyrics;
-          if (!l || l.syncType !== "LINE_SYNCED" || !Array.isArray(l.lines)) return null;
-          return l.lines.map((x) => ({ t: Number(x.startTimeMs) / 1000, text: String(x.words || "").trim() }));
-        } catch {
-          return null; // no lyrics, not synced, or offline: simply show nothing
-        }
-      })());
+      const request = (async () => {
+        const res = await requestLyrics(id);
+        const l = res && res.lyrics;
+        if (!l || l.syncType !== "LINE_SYNCED" || !Array.isArray(l.lines)) return null; // none, or not synced
+        return l.lines.map((x) => ({ t: Number(x.startTimeMs) / 1000, text: String(x.words || "").trim() }));
+      })();
+      // a failed request (offline, expired sign-in, rate limit) is forgotten so the next play tries again
+      request.catch(() => lyricsCache.delete(id));
+      lyricsCache.set(id, request);
       if (lyricsCache.size > 40) lyricsCache.delete(lyricsCache.keys().next().value);
     }
-    return lyricsCache.get(id);
+    return lyricsCache.get(id).catch(() => undefined); // undefined = could not ask; null = no synced lyrics
   }
 
   function loadLyrics(uri) {
-    if (lyrics.uri === uri) return;
-    lyrics = { uri, lines: null };
-    showLyric(-1);
+    if (lyrics.uri === uri && !lyrics.failedAt) return;
+    if (lyrics.uri !== uri) {
+      lyrics = { uri, lines: null, failedAt: 0 };
+      showLyric(-1);
+    }
     if (!settings.lyrics) return;
+    lyrics.failedAt = 0;
     fetchLyrics(uri).then((lines) => {
-      if (lyrics.uri === uri) lyrics.lines = lines;
+      if (lyrics.uri !== uri) return;
+      if (lines === undefined) lyrics.failedAt = performance.now(); // retried shortly, see renderFrame
+      else lyrics.lines = lines;
     });
   }
 
@@ -572,14 +587,14 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     const text = i >= 0 && lyrics.lines ? lyrics.lines[i].text : "";
     const visible = text && text !== "\u266a"; // instrumental breaks come through as a music note
     if (settings.reduceMotion) {
-      lyricEl.textContent = visible ? text : "";
+      lyricText.data = visible ? text : "";
       lyricEl.classList.toggle("show", !!visible);
       return;
     }
     lyricEl.classList.remove("show");
     clearTimeout(showLyric.timer);
     showLyric.timer = setTimeout(() => {
-      lyricEl.textContent = visible ? text : "";
+      lyricText.data = visible ? text : "";
       lyricEl.classList.toggle("show", !!visible);
     }, 180);
   }
@@ -594,17 +609,21 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
 
   // ---------- the next song, as a record peeking in from the right ----------
   let nextUri = null;
+  let nextQuietUntil = 0; // keep the next record out of the way while a skip animation plays
 
   // the next real song or episode (DJ narration, ads and queue markers are skipped over)
   function nextItem() {
     const d = Spicetify.Player.data || {};
-    return (d.nextItems || []).find((it) => it && /^spotify:(track|episode|local):/.test(it.uri || "") && !isAd(it)) || null;
+    const q = Spicetify.Queue || {};
+    const items = d.nextItems || (q.nextTracks || []).map((t) => t && (t.contextTrack || t));
+    return items.find((it) => it && /^spotify:(track|episode|local):/.test(it.uri || "") && !isAd(it)) || null;
   }
 
   function layoutNextUp() {
     const size = nextEl.offsetHeight;
     const center = slotEl.offsetTop + slotEl.offsetHeight / 2;
     nextEl.style.top = center - size / 2 + "px";
+    nextZone = null; // re-measured on the next mouse move
   }
 
   function updateNextUp() {
@@ -612,8 +631,15 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     const url = it && imageUrl(it.metadata);
     const r = restrictions();
     const roomy = overlay.clientWidth > slotEl.offsetWidth * 1.9;
-    const show = settings.nextUp && !!url && r.canSkipNext !== false && roomy;
+    const quiet = performance.now() < nextQuietUntil;
+    if (quiet) {
+      clearTimeout(updateNextUp.timer);
+      updateNextUp.timer = setTimeout(updateNextUp, nextQuietUntil - performance.now() + 20);
+    }
+    const show = settings.nextUp && !!url && r.canSkipNext !== false && roomy && !quiet;
     nextEl.classList.toggle("hidden", !show);
+    nextEl.tabIndex = show ? 0 : -1;
+    nextEl.setAttribute("aria-hidden", show ? "false" : "true");
     if (!show) return;
     const meta = it.metadata || {};
     nextEl.setAttribute("aria-label", `Next: ${meta.title || "next song"}${meta.artist_name ? " by " + meta.artist_name : ""}`);
@@ -628,9 +654,14 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
 
   function takeNext() {
     if (nextEl.classList.contains("hidden")) return;
+    // vanish on the spot (no slide back): the skip animation takes over from here
+    nextEl.style.transition = "none";
     nextEl.classList.remove("dragging", "near", "glimpse");
     nextEl.style.transform = "";
     nextEl.classList.add("hidden");
+    void nextEl.offsetWidth; // apply the hidden state before transitions come back
+    nextEl.style.transition = "";
+    nextEl.tabIndex = -1;
     nextUri = null;
     skip(1);
   }
@@ -638,9 +669,19 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   // ---------- skipping: the current record rolls off one side, the new one rolls in from the other ----------
   let swap = null; // { dir, ghost, timer }
 
+  let prevPendingUntil = 0;
+
   function skip(dir) {
-    startSwap(dir);
-    dir > 0 ? Spicetify.Player.next() : Spicetify.Player.back();
+    nextQuietUntil = performance.now() + 1400;
+    setNear(false);
+    if (dir > 0) {
+      if (restrictions().canSkipNext !== false) startSwap(1);
+      Spicetify.Player.next();
+    } else {
+      // Previous may just restart the song, so only roll once Spotify really changes it (see songchange)
+      prevPendingUntil = performance.now() + 1500;
+      Spicetify.Player.back();
+    }
     setTimeout(updateNextUp, 900);
   }
 
@@ -671,8 +712,8 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
       { duration: 460, easing: "cubic-bezier(0.55, 0, 0.8, 0.25)", fill: "forwards" }
     ).finished.then(() => ghost.remove(), () => ghost.remove());
     slotEl.style.opacity = "0";
-    // if the song does not change (e.g. Previous just restarts it), bring the record back anyway
-    swap = { dir, ghost, timer: setTimeout(arriveSwap, 900) };
+    // normally the new cover arrives well before this; it is only a safety net so the record never stays away
+    swap = { dir, ghost, timer: setTimeout(arriveSwap, 1800) };
   }
 
   function arriveSwap() {
@@ -705,12 +746,19 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     nextEl.classList.toggle("near", on);
   }
 
-  overlay.addEventListener("pointermove", (e) => {
-    if (nextEl.classList.contains("hidden") || idle || grabbing) return setNear(false);
-    const o = overlay.getBoundingClientRect();
+  // where the next record lives, updated whenever the layout changes (not on every mouse move)
+  let nextZone = null;
+
+  function measureNextZone() {
     const size = nextEl.offsetHeight;
     const top = nextEl.offsetTop;
-    setNear(e.clientX > o.right - Math.max(220, size * 0.75) && e.clientY > top - size * 0.35 && e.clientY < top + size * 1.35);
+    nextZone = { left: overlay.clientWidth - Math.max(220, size * 0.75), top: top - size * 0.35, bottom: top + size * 1.35 };
+  }
+
+  overlay.addEventListener("pointermove", (e) => {
+    if (idle || grabbing || nextEl.classList.contains("hidden") || performance.now() < nextQuietUntil) return setNear(false);
+    if (!nextZone) measureNextZone();
+    setNear(e.clientX > nextZone.left && e.clientY > nextZone.top && e.clientY < nextZone.bottom);
   });
   overlay.addEventListener("pointerleave", () => setNear(false));
 
@@ -805,8 +853,14 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     barEl.style.cursor = ok ? "" : "default";
   }
 
+  function setIcon(el, name, size) {
+    if (el.dataset.icon === name) return;
+    el.dataset.icon = name;
+    el.innerHTML = icon(name, size);
+  }
+
   function renderPlayButton(playing) {
-    playBtn.innerHTML = icon(playing ? "pause" : "play", 32);
+    setIcon(playBtn, playing ? "pause" : "play", 32);
   }
 
   function updateButtons() {
@@ -816,13 +870,13 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     shuffleBtn.classList.toggle("on", !!sh);
     shuffleBtn.classList.toggle("off", !sh);
     const rp = Spicetify.Player.getRepeat();
-    repeatBtn.innerHTML = icon(rp === 2 ? "repeat-once" : "repeat", 26);
+    setIcon(repeatBtn, rp === 2 ? "repeat-once" : "repeat", 26);
     repeatBtn.classList.toggle("on", rp > 0);
     repeatBtn.classList.toggle("off", rp === 0);
   }
 
   // ---------- rewind sound: soft, low tape-rewind rumble that follows the hand's speed ----------
-  const sfx = { ac: null, speed: 0, gain: 0, phase: 0, pitch: 1, nextJump: 0, lp: 0, lp2: 0, n1: 0, n2: 0, crackleOn: false, vol: 0, cGain: 0, pop: 0, cp: 0, cs: 0 };
+  const sfx = { ac: null, speed: 0, gain: 0, phase: 0, pitch: 1, nextJump: 0, lp: 0, lp2: 0, n1: 0, n2: 0, quietSince: 0 };
 
   function startSfx() {
     if (sfx.ac) {
@@ -844,25 +898,17 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     const n = outL.length;
     const speed = Math.min(8, Math.abs(sfx.speed)); // multiples of normal playback speed
     const target = speed > 0.1 ? Math.min(0.06, 0.018 + speed * 0.008) : 0;
-    // crackle follows Spotify's volume so it never sits louder than the music
-    const vol = Math.max(0, Math.min(1, sfx.vol || 0));
-    const crackleTarget = sfx.crackleOn ? 0.55 * vol * vol : 0;
-    if (target === 0 && sfx.gain === 0 && crackleTarget === 0 && sfx.cGain === 0) {
+    if (target === 0 && sfx.gain === 0) {
       outL.fill(0);
       outR.fill(0);
       return;
     }
     const sr = sfx.ac.sampleRate;
     const gStep = 1 / (sr * 0.006); // ~6 ms fades: instant but click-free
-    const cStep = 1 / (sr * 0.08);
     const toneCut = Math.min(1, ((260 + speed * 90) / sr) * 6.283);
     const hissCut = Math.min(1, ((500 + speed * 160) / sr) * 6.283);
-    const popRate = 11 / sr;       // small ticks per second
-    const bigPopRate = 0.6 / sr;   // occasional louder pops
-    const popCut = Math.min(1, (3800 / sr) * 6.283);
-    const surfCut = Math.min(1, (1800 / sr) * 6.283);
     for (let i = 0; i < n; i++) {
-      // ----- rewind garble: pitch hops like voices on a rewinding tape
+      // garble: pitch hops like voices on a rewinding tape
       if (--sfx.nextJump <= 0) {
         sfx.pitch = 0.75 + Math.random() * 0.5;
         sfx.nextJump = sr * (0.04 + Math.random() * 0.06);
@@ -872,26 +918,14 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
       const saw = sfx.phase * 2 - 1;
       sfx.lp += (saw - sfx.lp) * toneCut;
       sfx.lp2 += (sfx.lp - sfx.lp2) * toneCut;
+      // soft low hiss
       const noise = Math.random() * 2 - 1;
       sfx.n1 += (noise - sfx.n1) * hissCut;
       sfx.n2 += (sfx.n1 - sfx.n2) * hissCut;
       sfx.gain += target > sfx.gain ? Math.min(gStep, target - sfx.gain) : -Math.min(gStep, sfx.gain - target);
-      let s0 = (sfx.lp2 * 0.8 + sfx.n2 * 0.9) * sfx.gain;
-
-      // ----- vinyl crackle: sparse ticks and pops over a faint surface hiss
-      sfx.cGain += crackleTarget > sfx.cGain ? Math.min(cStep, crackleTarget - sfx.cGain) : -Math.min(cStep, sfx.cGain - crackleTarget);
-      if (sfx.cGain > 0) {
-        const r = Math.random();
-        if (r < bigPopRate) sfx.pop = 0.5 + Math.random() * 0.5;
-        else if (r < bigPopRate + popRate) sfx.pop = Math.max(sfx.pop, 0.08 + Math.random() * 0.18);
-        const click = sfx.pop * (Math.random() * 2 - 1);
-        sfx.pop *= 0.93;
-        sfx.cp += (click - sfx.cp) * popCut;
-        sfx.cs += (noise * 0.012 - sfx.cs) * surfCut;
-        s0 += (sfx.cp * 0.16 + sfx.cs) * sfx.cGain;
-      }
-      outL[i] = s0;
-      outR[i] = s0;
+      const v = (sfx.lp2 * 0.8 + sfx.n2 * 0.9) * sfx.gain;
+      outL[i] = v;
+      outR[i] = v;
     }
   }
 
@@ -950,11 +984,16 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   }
 
   // UI loop: only touches the DOM when something visible changed
-  function frame() {
-    try {
-      renderFrame();
-    } catch (err) {
-      console.error("[Vinyl Rewind]", err);
+  let lastRender = 0;
+
+  function frame(t) {
+    if (!(t - lastRender < 15)) {
+      lastRender = t;
+      try {
+        renderFrame();
+      } catch (err) {
+        console.error("[Vinyl Rewind]", err);
+      }
     }
     if (isOpen) raf = requestAnimationFrame(frame);
   }
@@ -971,7 +1010,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     const pos = displayPos();
     const sec = Math.floor(pos);
     if (sec !== lastSec || dur !== lastDur) {
-      curEl.textContent = fmt(pos);
+      curText.data = fmt(pos);
       const text = `${fmt(pos)} of ${fmt(dur)}`;
       for (const el of [discEl, barEl]) {
         el.setAttribute("aria-valuemax", String(Math.round(dur)));
@@ -980,7 +1019,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
       }
       lastSec = sec;
     }
-    if (dur !== lastDur) { durEl.textContent = fmt(dur); lastDur = dur; }
+    if (dur !== lastDur) { durText.data = fmt(dur); lastDur = dur; }
     const p = dur ? Math.min(1, Math.max(0, pos / dur)) : 0;
     if (Math.abs(p - lastP) > 0.0002) {
       fillEl.style.transform = `scaleX(${p})`;
@@ -988,19 +1027,34 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
       lastP = p;
     }
     syncVolume();
-    sfx.crackleOn = settings.crackle && !grabbing && isPlaying();
-    sfx.vol = lastVol >= 0 ? lastVol : Spicetify.Player.getVolume();
+    if (sfx.ac) {
+      // the sound engine sleeps whenever the record is not being held
+      if (grabbing || sfx.gain > 0) {
+        sfx.quietSince = 0;
+      } else if (sfx.ac.state === "running") {
+        if (!sfx.quietSince) sfx.quietSince = performance.now();
+        else if (performance.now() - sfx.quietSince > 1500) sfx.ac.suspend();
+      }
+    }
     updateLyric(pos);
-    if (sec !== renderFrame.nextCheck) {
-      renderFrame.nextCheck = sec; // the queue can change at any time; check once a second
+    const now = performance.now();
+    if (!(now < renderFrame.nextCheck)) {
+      renderFrame.nextCheck = now + 1000; // the queue can change at any time, playing or paused
+      if (lyrics.failedAt && now - lyrics.failedAt > 10000) loadLyrics(lyrics.uri); // lyrics request failed earlier: try again
       const it = nextItem();
       if ((it && it.uri) !== nextUri || (!it && !nextEl.classList.contains("hidden"))) updateNextUp();
     }
   }
 
+  // the record's centre is measured when it is grabbed (it is held still while grabbed)
+  let discCenter = null;
+
   function angleAt(e) {
-    const r = discEl.getBoundingClientRect();
-    return (Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)) * 180) / Math.PI;
+    if (!discCenter || !grabbing) {
+      const r = discEl.getBoundingClientRect();
+      discCenter = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }
+    return (Math.atan2(e.clientY - discCenter.y, e.clientX - discCenter.x) * 180) / Math.PI;
   }
 
   let grabStartPos = 0;
@@ -1018,6 +1072,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     setSpinning(false); // hand on the record: it stops right now
     if (settings.sound) startSfx();
 
+    discCenter = null; // re-measure for this grab
     wasPlaying = isPlaying();
     vPos = grabStartPos = displayPos();
     if (wasPlaying) setPlaying(false);
@@ -1105,7 +1160,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     volFillEl.style.transform = `scaleX(${v})`;
     volRailEl.style.transform = `translateX(${v * 100}%)`;
     const name = v === 0 ? "volume-off" : v < 0.34 ? "volume-one-wave" : v < 0.67 ? "volume-two-wave" : "volume";
-    muteBtn.innerHTML = icon(name, 22);
+    setIcon(muteBtn, name, 22);
     muteBtn.title = v === 0 ? "Unmute" : "Mute";
     muteBtn.setAttribute("aria-label", muteBtn.title);
     volBarEl.setAttribute("aria-valuenow", String(Math.round(v * 100)));
@@ -1188,6 +1243,10 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   });
 
   Spicetify.Player.addEventListener("songchange", () => {
+    if (performance.now() < prevPendingUntil) {
+      prevPendingUntil = 0;
+      startSwap(-1); // runs before updateTrack, so the outgoing record still shows the old cover
+    }
     if (grabbing) release(null, false); // the position being scrubbed belongs to the old song
     barDrag = null;
     if (isOpen) updateTrack();
@@ -1366,9 +1425,8 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
       else { clearTimeout(idleTimer); setIdle(false); }
     }
     if (!settings.sound) sfx.speed = 0;
-    if (isOpen && settings.crackle) startSfx();
     if (isOpen) {
-      lyrics.uri = null; // reload (or drop) lyrics to match the setting
+      lyrics = { uri: null, lines: null, failedAt: 0 }; // reload (or drop) lyrics to match the setting
       const item = currentItem();
       loadLyrics(item && item.uri);
       updateNextUp();
@@ -1395,7 +1453,6 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     raf = requestAnimationFrame(frame);
     lastMouse = null;
     armIdle();
-    if (settings.crackle) startSfx();
     requestAnimationFrame(updateNextUp);
     scheduleGlimpse(6000);
     button.active = true;
@@ -1418,7 +1475,6 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     setIdle(false);
     if (weWentFullscreen && document.fullscreenElement) document.exitFullscreen().catch(() => {});
     sfx.speed = 0;
-    sfx.crackleOn = false;
     showLyric(-1);
     clearTimeout(glimpseTimer);
     setNear(false);
@@ -1433,7 +1489,6 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     ["sound", "Rewind sound", "Play a soft rewind sound while you turn the record."],
     ["idle", "Hide controls when idle", "After a few seconds without the mouse, show only the record and the progress bar."],
     ["texture", "Background texture", "Add a faint paper texture behind the record."],
-    ["crackle", "Vinyl crackle", "Add soft record crackle while music plays in Vinyl mode."],
     ["lyrics", "Lyrics when idle", "Show the current line of synced lyrics under the record when the controls are hidden."],
     ["nextUp", "Show next song", "Show the next song as a record at the edge of the screen. Click or drag it in to skip."],
     ["homeTip", "Show tip on Home", "Show the Vinyl mode card in Getting started."],
