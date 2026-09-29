@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.7.10.4
+// VERSION: 1.7.11.0
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -37,9 +37,13 @@
     for (const k of Object.keys(SETTINGS_DEFAULTS)) if (typeof saved[k] === "boolean") settings[k] = saved[k];
   } catch {}
 
+  // only choices that differ from the defaults are stored, so improved defaults (and the system's
+  // reduced-motion preference) still reach everyone who never changed that setting
   function saveSettings() {
     try {
-      const v = JSON.stringify(settings);
+      const changed = {};
+      for (const k of Object.keys(SETTINGS_DEFAULTS)) if (settings[k] !== SETTINGS_DEFAULTS[k]) changed[k] = settings[k];
+      const v = JSON.stringify(changed);
       Spicetify.LocalStorage ? Spicetify.LocalStorage.set(SETTINGS_KEY, v) : localStorage.setItem(SETTINGS_KEY, v);
     } catch {}
   }
@@ -1902,6 +1906,22 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
 
   // ---------- open / close ----------
   let returnFocus = null;
+
+  // follow the system's "reduce motion" switch while it runs, unless you picked something else in Vinyl mode
+  try {
+    const mq = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)");
+    if (mq && mq.addEventListener) {
+      mq.addEventListener("change", (e) => {
+        const followed = settings.reduceMotion === SETTINGS_DEFAULTS.reduceMotion;
+        SETTINGS_DEFAULTS.reduceMotion = e.matches;
+        if (followed) {
+          settings.reduceMotion = e.matches;
+          applySettings();
+        }
+        saveSettings();
+      });
+    }
+  } catch {}
 
   function applySettings() {
     document.querySelectorAll("input[data-vr-setting]").forEach((i) => (i.checked = !!settings[i.dataset.vrSetting]));
