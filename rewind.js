@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.7.6.1
+// VERSION: 1.7.7.0
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -593,6 +593,8 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     }
     if (token !== trackToken) return;
 
+    // a new song while the controls are hidden: name it for a moment in the lyric line
+    if (idle && titleText.data && (titleText.data !== title || artistText.data !== artist)) announceSong(artist ? title + " · " + artist : title);
     titleText.data = title;
     titleEl.title = title; // full text on hover when a long title is cut off
     artistText.data = artist;
@@ -622,6 +624,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   const lyricsCache = new Map(); // track id -> Promise<[{ t, text }] | null>
   let lyrics = { uri: null, lines: null, failedAt: 0 };
   let lyricIndex = -1;
+  let announceUntil = 0; // a new song name is showing in the lyric line until then
 
   async function accessToken() {
     const P = Spicetify.Platform || {};
@@ -669,7 +672,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     if (lyrics.uri === uri && !lyrics.failedAt) return;
     if (lyrics.uri !== uri) {
       lyrics = { uri, lines: null, failedAt: 0 };
-      showLyric(-1);
+      if (performance.now() >= announceUntil) showLyric(-1); // (a song name being announced stays)
     }
     if (!settings.lyrics) return;
     lyrics.failedAt = 0;
@@ -678,6 +681,23 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
       if (lines === undefined) lyrics.failedAt = performance.now(); // retried shortly, see renderFrame
       else lyrics.lines = lines;
     });
+  }
+
+  // briefly show the new song's name in the lyric line (idle mode), then lyrics carry on
+  function announceSong(text) {
+    announceUntil = performance.now() + 4200;
+    lyricIndex = -2; // makes the next lyric update redraw, whatever line it is
+    clearTimeout(showLyric.timer);
+    if (settings.reduceMotion) {
+      lyricText.data = text;
+      lyricEl.classList.add("show");
+      return;
+    }
+    lyricEl.classList.remove("show");
+    showLyric.timer = setTimeout(() => {
+      lyricText.data = text;
+      lyricEl.classList.add("show");
+    }, 180);
   }
 
   function showLyric(i) {
@@ -699,6 +719,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   }
 
   function updateLyric(pos) {
+    if (performance.now() < announceUntil) return;
     const lines = settings.lyrics && idle ? lyrics.lines : null;
     if (!lines || !lines.length) return showLyric(-1);
     let i = -1;
@@ -1685,7 +1706,10 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
     idle = on;
     overlay.classList.toggle("idle", on);
     layoutIdle();
-    if (!on) showLyric(-1);
+    if (!on) {
+      announceUntil = 0;
+      showLyric(-1);
+    }
   }
 
   function armIdle() {
