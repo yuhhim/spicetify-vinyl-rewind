@@ -57,6 +57,7 @@ Click the record icon in the playbar, press `Alt + Shift + V`, or use **Try it**
 | `M` | Mute |
 | `F` | Full screen |
 | `Esc` | Leave full screen, then close |
+| `?` | Show all keyboard shortcuts |
 | `Tab` | Reach the next-song record, then `Enter` to skip |
 
 ## Settings

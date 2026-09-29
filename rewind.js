@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.7.5.1
+// VERSION: 1.7.6.0
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -116,6 +116,24 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
 #vr-overlay.idle .vr-meta, #vr-overlay.idle .vr-controls, #vr-overlay.idle .vr-close, #vr-overlay.idle .vr-time { opacity: 0; pointer-events: none; }
 #vr-overlay.idle, #vr-overlay.idle * { cursor: none !important; }
 #vr-overlay .vr-disc.grabbing { cursor: grabbing; }
+/* ? = a small card listing the keyboard shortcuts (only there when asked for) */
+#vr-overlay .vr-help {
+  position: absolute; left: 50%; top: 50%; z-index: 5; box-sizing: border-box;
+  width: max-content; max-width: min(460px, calc(100vw - 32px)); padding: 22px 26px; border-radius: 14px;
+  background: rgba(0,0,0,0.55); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.35); color: #fff; outline: none;
+  opacity: 0; visibility: hidden; pointer-events: none; transform: translate(-50%, -50%) scale(0.97);
+  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0s linear 0.18s;
+}
+#vr-overlay .vr-help.show { opacity: 1; visibility: visible; pointer-events: auto; transform: translate(-50%, -50%); transition: opacity 0.18s ease, transform 0.18s ease; }
+#vr-overlay .vr-help h3 { margin: 0 0 14px; font-size: 17px; font-weight: 700; }
+#vr-overlay .vr-help dl { display: grid; grid-template-columns: auto 1fr; gap: 9px 18px; margin: 0; font-size: 14px; line-height: 1.5; }
+#vr-overlay .vr-help dt { text-align: right; white-space: nowrap; }
+#vr-overlay .vr-help dd { margin: 0; opacity: 0.85; }
+#vr-overlay .vr-help kbd {
+  display: inline-block; min-width: 22px; padding: 1px 7px; border-radius: 6px; box-sizing: border-box;
+  background: rgba(255,255,255,0.15); font: inherit; font-size: 12.5px; font-weight: 600; text-align: center;
+}
 /* L = like: a heart pops over the middle of the record (filled = saved, outline = removed) */
 #vr-overlay .vr-heart {
   position: absolute; left: 50%; top: 50%; z-index: 2; pointer-events: none;
@@ -296,6 +314,20 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     <div class="vr-ghost" hidden><div class="vr-ghost-spin"><img alt="" /></div><div class="vr-hole"></div></div>
     <div class="vr-lyric" dir="auto" aria-hidden="true"></div>
     <div class="vr-live" role="status" aria-live="polite"></div>
+    <div class="vr-help" role="dialog" aria-label="Keyboard shortcuts" tabindex="-1">
+      <h3>Keyboard shortcuts</h3>
+      <dl>
+        <dt><kbd>Space</kbd></dt><dd>Play / pause</dd>
+        <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Rewind / skip ahead 5 s (hold Shift for 15 s)</dd>
+        <dt><kbd>N</kbd> <kbd>P</kbd></dt><dd>Next / previous song</dd>
+        <dt><kbd>L</kbd></dt><dd>Like or unlike the song</dd>
+        <dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Volume</dd>
+        <dt><kbd>M</kbd></dt><dd>Mute</dd>
+        <dt><kbd>F</kbd></dt><dd>Full screen</dd>
+        <dt><kbd>Alt</kbd> <kbd>Shift</kbd> <kbd>V</kbd></dt><dd>Open or close Vinyl mode</dd>
+        <dt><kbd>Esc</kbd></dt><dd>Leave full screen, then close</dd>
+      </dl>
+    </div>
     <button class="vr-next hidden" data-act="next-record" aria-label="Next song"><img alt="" /></button>
     <button class="vr-close vr-full" data-act="fullscreen"></button>
     <button class="vr-close" data-act="close" aria-label="Close" title="Close">${icon("x", 22)}</button>
@@ -1503,6 +1535,25 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
     }
   }
 
+  // ---------- ? : keyboard shortcut card ----------
+  const helpEl = $(".vr-help");
+  let helpOpen = false;
+  let helpReturn = null;
+  function toggleHelp(on = !helpOpen, restoreFocus = true) {
+    if (on === helpOpen) return;
+    helpOpen = on;
+    helpEl.classList.toggle("show", on);
+    if (on) {
+      helpReturn = document.activeElement;
+      setIdle(false);
+      helpEl.focus({ preventScroll: true });
+    } else {
+      if (restoreFocus && helpReturn && helpReturn.focus && document.contains(helpReturn)) helpReturn.focus({ preventScroll: true });
+      helpReturn = null;
+    }
+  }
+  overlay.addEventListener("pointerdown", (e) => { if (helpOpen && !helpEl.contains(e.target)) toggleHelp(false); }, true);
+
   function isTyping(e) {
     const t = e.target;
     return !!(t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)));
@@ -1510,6 +1561,15 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
 
   function onKey(e) {
     if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e)) return;
+    if (helpOpen) {
+      // Esc or ? just closes the card; any other shortcut closes it and does its job
+      toggleHelp(false);
+      if (e.key === "Escape" || e.key === "?") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return wake();
+      }
+    }
     const focusedButton = e.target && e.target.closest && e.target.closest("#vr-overlay button");
     let handled = true;
     switch (e.key) {
@@ -1555,6 +1615,9 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
       case "l":
       case "L":
         toggleLike();
+        break;
+      case "?":
+        toggleHelp(true);
         break;
       default:
         handled = false;
@@ -1617,7 +1680,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
     if (!settings.idle) return;
     idleTimer = setTimeout(() => {
       if (!isOpen) return;
-      if (grabbing || barDrag !== null || volDrag) return armIdle();
+      if (grabbing || barDrag !== null || volDrag || helpOpen) return armIdle();
       setIdle(true);
     }, IDLE_MS);
   }
@@ -1732,6 +1795,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
     setSpinning(false);
     cancelAnimationFrame(raf);
     window.removeEventListener("keydown", onKey, true);
+    toggleHelp(false, false);
     if (returnFocus && returnFocus.focus && document.contains(returnFocus)) returnFocus.focus({ preventScroll: true });
     returnFocus = null;
     clearTimeout(idleTimer);
@@ -1818,7 +1882,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
     keys.innerHTML = `
       <div class="x-settings-firstColumn">
         <span class="${labelCls}">Keyboard shortcuts</span>
-        <span class="${noteCls}">Alt + Shift + V open or close · ← → or scroll on the record to rewind / skip ahead · N P next / previous song · L like · Space play or pause · ↑ ↓ volume · M mute · F full screen · Esc close</span>
+        <span class="${noteCls}">Alt + Shift + V open or close · ← → or scroll on the record to rewind / skip ahead · N P next / previous song · L like · Space play or pause · ? all shortcuts · ↑ ↓ volume · M mute · F full screen · Esc close</span>
       </div>`;
     sec.appendChild(keys);
 
