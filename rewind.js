@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.4.0
+// VERSION: 1.4.1
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -47,7 +47,9 @@
   const style = document.createElement("style");
   style.id = "vinyl-rewind-style";
   style.textContent = `
-body.vr-open > *:not(#vr-overlay) { visibility: hidden !important; }
+/* Spotify's own interface is taken out of layout while Vinyl mode covers it, so its hidden panels
+   cost nothing to re-measure on every song change */
+body.vr-open > *:not(#vr-overlay) { display: none !important; }
 .vr-playbar-btn {
   background: transparent !important; border: none !important; box-shadow: none !important;
   width: 32px !important; height: 32px !important; padding: 0 !important; border-radius: 50% !important;
@@ -262,6 +264,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   overlay.setAttribute("aria-label", "Vinyl mode");
   overlay.innerHTML = `
     <div class="vr-crinkle"></div><div class="vr-crinkle"></div>
+    <div class="vr-ghost" hidden><div class="vr-ghost-spin"><img alt="" /></div><div class="vr-hole"></div></div>
     <div class="vr-lyric" aria-hidden="true"></div>
     <button class="vr-next hidden" data-act="next-record" aria-label="Next song"><img alt="" /></button>
     <button class="vr-close vr-full" data-act="fullscreen"></button>
@@ -321,6 +324,11 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   const coverImg = $(".vr-spin img");
   const titleEl = $(".vr-title");
   const artistEl = $(".vr-artist");
+  const titleText = textSlot(titleEl);
+  const ghostEl = $(".vr-ghost");
+  const ghostSpin = $(".vr-ghost-spin");
+  const ghostImg = $(".vr-ghost-spin img");
+  const artistText = textSlot(artistEl);
   const curEl = $(".vr-time.cur");
   const durEl = $(".vr-time.dur");
   const curText = textSlot(curEl);
@@ -491,8 +499,8 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     }
     if (token !== trackToken) return;
 
-    titleEl.textContent = title;
-    artistEl.textContent = artist;
+    titleText.data = title;
+    artistText.data = artist;
     const uri = item && item.uri;
     if (cover) {
       coverImg.src = cover.src;
@@ -684,30 +692,21 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     endSwap();
     const r = discEl.getBoundingClientRect();
     const o = overlay.getBoundingClientRect();
-    const ghost = document.createElement("div");
-    ghost.className = "vr-ghost";
-    ghost.style.cssText = `left:${r.left - o.left}px;top:${r.top - o.top}px;width:${r.width}px;height:${r.height}px`;
-    const spinBox = document.createElement("div");
-    spinBox.className = "vr-ghost-spin";
-    spinBox.style.transform = `rotate(${getAngle()}deg)`;
-    if (coverImg.style.visibility !== "hidden" && coverImg.src) {
-      const img = document.createElement("img");
-      img.alt = "";
-      img.src = coverImg.src;
-      spinBox.appendChild(img);
-    }
-    const hole = document.createElement("div");
-    hole.className = "vr-hole";
-    ghost.append(spinBox, hole);
-    overlay.appendChild(ghost);
+    ghostEl.style.cssText = `left:${r.left - o.left}px;top:${r.top - o.top}px;width:${r.width}px;height:${r.height}px`;
+    ghostSpin.style.transform = `rotate(${getAngle()}deg)`;
+    const hasCover = coverImg.style.visibility !== "hidden" && coverImg.src;
+    ghostImg.style.visibility = hasCover ? "" : "hidden";
+    if (hasCover) ghostImg.src = coverImg.src;
+    ghostEl.hidden = false;
     // rolling away: moving left means turning counter-clockwise (and the reverse for Previous)
-    ghost.animate(
+    const anim = ghostEl.animate(
       [{ transform: "none" }, { transform: `translateX(${dir > 0 ? -110 : 110}vw) rotate(${dir > 0 ? -150 : 150}deg)` }],
       { duration: 460, easing: "cubic-bezier(0.55, 0, 0.8, 0.25)", fill: "forwards" }
-    ).finished.then(() => ghost.remove(), () => ghost.remove());
+    );
+    anim.finished.then(() => { ghostEl.hidden = true; anim.cancel(); }, () => {});
     slotEl.style.opacity = "0";
     // normally the new cover arrives well before this; it is only a safety net so the record never stays away
-    swap = { dir, ghost, timer: setTimeout(arriveSwap, 1800) };
+    swap = { dir, anim, timer: setTimeout(arriveSwap, 1800) };
   }
 
   function arriveSwap() {
@@ -725,7 +724,8 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   function endSwap() {
     if (!swap) return;
     clearTimeout(swap.timer);
-    swap.ghost.remove();
+    swap.anim.cancel();
+    ghostEl.hidden = true;
     swap = null;
     slotEl.style.opacity = "";
   }
@@ -1418,6 +1418,40 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     if (isOpen) updateNextUp();
   });
 
+  // ---------- keep Spicetify's page scanner cheap while Vinyl mode is open ----------
+  // On some Spotify versions Spicetify re-checks the style of every element that is not marked
+  // data-scroll-optimized, on every page change. A song change causes several of those, which made
+  // skipping stutter. Plain elements (no scrolling, not a menu or dialog) never need that work, so they are
+  // marked in idle moments; scroll areas, menus and dialogs are left to Spicetify exactly as before.
+  function scannerStillActive() {
+    const v = String((Spicetify.Platform && Spicetify.Platform.version) || "").split(".").map((n) => parseInt(n, 10));
+    return !(v[1] >= 2 && v[2] >= 57); // the same check Spicetify uses to switch its scanner off
+  }
+
+  let markTimer = 0;
+  function markPlainElements() {
+    clearTimeout(markTimer);
+    if (!isOpen || !scannerStillActive()) return;
+    const pending = document.querySelectorAll("*:not([data-scroll-optimized])");
+    let i = 0;
+    const idle = window.requestIdleCallback || ((cb) => setTimeout(() => cb({ timeRemaining: () => 8 }), 1));
+    const step = (deadline) => {
+      if (!isOpen) return;
+      while (i < pending.length && deadline.timeRemaining() > 1) {
+        const el = pending[i++];
+        if (!el.isConnected || el.hasAttribute("data-scroll-optimized")) continue;
+        if (el.id === "context-menu" || el.getAttribute("role") === "dialog" || el.classList.contains("popup") || el.getAttribute("aria-haspopup") === "true") continue;
+        if (el.closest("#context-menu")) continue;
+        const cs = getComputedStyle(el);
+        if (cs.overflow === "auto" || cs.overflow === "scroll" || cs.overflowY === "auto" || cs.overflowY === "scroll") continue;
+        el.setAttribute("data-scroll-optimized", "true");
+      }
+      if (i < pending.length) idle(step);
+      else markTimer = setTimeout(markPlainElements, 4000); // catch up with elements Spotify adds later
+    };
+    idle(step);
+  }
+
   // ---------- open / close ----------
   let returnFocus = null;
 
@@ -1459,6 +1493,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     armIdle();
     requestAnimationFrame(updateNextUp);
     scheduleGlimpse(6000);
+    setTimeout(markPlainElements, 600);
     button.active = true;
   }
 
@@ -1481,6 +1516,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     sfx.speed = 0;
     showLyric(-1);
     clearTimeout(glimpseTimer);
+    clearTimeout(markTimer);
     setNear(false);
     endSwap();
     if (sfx.ac) setTimeout(() => !isOpen && sfx.ac.suspend(), 200);
