@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.7.11.1
+// VERSION: 1.7.11.2
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -1237,9 +1237,11 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
   const durationSec = () => (Spicetify.Player.getDuration() || 0) / 1000;
   const clampPos = (p) => Math.max(0, Math.min(p, Math.max(0, durationSec() - 0.3)));
 
+  // 3:07, or 1:02:07 for an hour or more (podcasts, long mixes), like Spotify
   function fmt(sec) {
     sec = Math.max(0, Math.floor(sec));
-    return Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0");
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), ss = String(sec % 60).padStart(2, "0");
+    return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
   }
 
   function seekTo(sec) {
