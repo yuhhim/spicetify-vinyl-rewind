@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.7.6.0
+// VERSION: 1.7.6.1
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -1570,6 +1570,14 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
         return wake();
       }
     }
+    // the focused volume slider behaves like a slider: ← → change the volume, Home / End go to 0 / 100 %
+    if (e.target === volBarEl && /^(ArrowLeft|ArrowRight|Home|End)$/.test(e.key)) {
+      const cur = lastVol < 0 ? Spicetify.Player.getVolume() : lastVol;
+      setVolume(e.key === "Home" ? 0 : e.key === "End" ? 1 : cur + (e.key === "ArrowRight" ? 0.05 : -0.05));
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return wake();
+    }
     const focusedButton = e.target && e.target.closest && e.target.closest("#vr-overlay button");
     let handled = true;
     switch (e.key) {
@@ -1583,6 +1591,11 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
         break;
       case "ArrowRight":
         stepSeek(e.shiftKey ? SEEK_STEP * 3 : SEEK_STEP);
+        break;
+      case "Home":
+        // on the record or the progress bar (both sliders): back to the start of the song
+        if (e.target === discEl || e.target === barEl) stepSeek(-displayPos());
+        else handled = false;
         break;
       case "ArrowUp":
         setVolume((lastVol < 0 ? Spicetify.Player.getVolume() : lastVol) + 0.05);
