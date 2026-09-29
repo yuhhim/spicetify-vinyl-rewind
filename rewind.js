@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.4.1
+// VERSION: 1.4.2
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -387,10 +387,16 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   }
 
   // Dominant color of the cover (favoring colorful areas), clamped so white text stays readable.
+  // one small CPU-side canvas, reused for every cover
+  let colorCtx = null;
   function dominantColor(bmp) {
-    const c = document.createElement("canvas");
-    c.width = c.height = 48;
-    const ctx = c.getContext("2d");
+    if (!colorCtx) {
+      const c = document.createElement("canvas");
+      c.width = c.height = 48;
+      colorCtx = c.getContext("2d", { willReadFrequently: true });
+    }
+    const ctx = colorCtx;
+    ctx.clearRect(0, 0, 48, 48);
     ctx.drawImage(bmp, 0, 0, 48, 48);
     const px = ctx.getImageData(0, 0, 48, 48).data;
     const bins = new Map();
@@ -418,23 +424,22 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     let p = coverCache.get(url);
     if (!p) {
       p = (async () => {
+        // the picture itself loads straight from Spotify's image server (browser-cached, decoded off the main thread)
+        const img = new Image();
+        img.decoding = "async";
+        img.src = url;
+        const decoded = img.decode().catch(() => {});
+        // its colour comes from a tiny copy, shrunk off the main thread
         const blob = await (await fetch(url)).blob();
-        const bmp = await createImageBitmap(blob);
+        const bmp = await createImageBitmap(blob, { resizeWidth: 48, resizeHeight: 48, resizeQuality: "low" });
         const color = dominantColor(bmp);
         bmp.close?.();
-        const src = URL.createObjectURL(blob);
-        const img = new Image();
-        img.src = src;
-        try { await img.decode(); } catch {}
-        return { src, color };
+        await decoded;
+        return { src: url, color, img }; // img keeps the decoded picture warm for an instant swap
       })();
       p.catch(() => coverCache.delete(url));
       coverCache.set(url, p);
-      if (coverCache.size > 24) {
-        const [oldUrl, oldP] = coverCache.entries().next().value;
-        coverCache.delete(oldUrl);
-        oldP.then((c) => { if (coverImg.src !== c.src && nextImg.src !== c.src) URL.revokeObjectURL(c.src); }).catch(() => {});
-      }
+      if (coverCache.size > 24) coverCache.delete(coverCache.keys().next().value);
     }
     return p;
   }
