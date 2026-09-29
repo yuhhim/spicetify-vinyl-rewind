@@ -6,6 +6,7 @@ A fullscreen spinning record for Spotify. Grab the record and turn it to rewind 
 
 ## Features
 
+- **Paper unfold**: opening Vinyl mode unfolds a crumpled sheet of paper out of the button; closing crumples it back in.
 - **Scratch to scrub**: grab the record and it stops instantly. Turn it backwards to rewind, forwards to fast-forward, and let go to carry on playing. One full turn is 24 seconds of the song.
 - **Rewind sound**: a soft tape-rewind rumble that follows how fast you turn.
 - **Next record**: the next song waits just off the right edge and peeks in now and then. Move the mouse near it to bring it in, then click or drag it in to skip. Skipping rolls the current record out and the new one in.
