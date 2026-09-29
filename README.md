@@ -6,14 +6,14 @@ A fullscreen spinning record for Spotify. Grab the record and turn it to rewind 
 
 ## Features
 
-- **Scratch to scrub**: grab the record and it stops instantly. Turn it backwards to rewind, forwards to fast-forward, and let go to carry on playing. One full turn is 24 seconds of the song.
+- **Scratch to scrub**: grab the record and it stops instantly. Turn it backwards to rewind, forwards to fast-forward, and let go to carry on playing. One full turn is 24 seconds of the song. You can also scroll over the record to nudge it.
 - **Rewind sound**: a soft tape-rewind rumble that follows how fast you turn.
 - **Next record**: the next song waits just off the right edge and peeks in now and then. Move the mouse near it to bring it in, then click or drag it in to skip. Skipping rolls the current record out and the new one in.
 - **Synced lyrics**: when the controls are hidden, the current lyric line shows under the record.
 - **Album colors**: the background takes its color from the cover art, with a faint paper texture that changes with every song. Both fade smoothly when the track changes.
 - **Idle mode**: leave the mouse alone for 3 seconds and the record takes center stage; everything except the progress bar fades away.
-- **Full controls**: progress bar, shuffle, previous, play/pause, next, repeat, and a volume control that expands on hover.
-- **Built in**: a Vinyl mode section in Spotify's Settings, a card in Home > Getting started, and full keyboard control.
+- **Full controls**: progress bar (hover it to see the time at any point), shuffle, previous, play/pause, next, repeat, and a volume control that expands on hover.
+- **Built in**: a Vinyl mode section in Spotify's Settings (or right-click the record button for quick settings), a card in Home > Getting started, and full keyboard control.
 
 ## Install
 
@@ -77,7 +77,7 @@ Scratching is turned off automatically when Spotify doesn't allow seeking (ads, 
 
 ## Performance
 
-The record spins on the GPU, so it stays smooth at your display's full refresh rate. Everything else updates only when something changes, and Vinyl Rewind does no work at all while it is closed.
+The record spins on the GPU, so it stays smooth at your display's full refresh rate, and it follows your mouse as fast as the mouse reports. Song changes and scratching are free of long stalls, even when skipping quickly. While Vinyl mode is open, Spotify's hidden interface is paused out of layout; while it is closed, Vinyl Rewind does no work at all.
 
 ## Uninstall
 
