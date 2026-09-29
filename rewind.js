@@ -1,11 +1,15 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.7.12.1
+// VERSION: 1.7.12.2
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
   const ButtonApi = window.Spicetify && ((Spicetify.Playbar && Spicetify.Playbar.Button) || (Spicetify.Topbar && Spicetify.Topbar.Button));
-  if (!window.Spicetify || !Spicetify.Player || !Spicetify.Player.origin || !ButtonApi || !document.body) {
+  // wait for Spicetify's player; the button API gets ~10 s more, after which Vinyl mode starts without a
+  // button (Alt+Shift+V and the Home card still open it)
+  VinylRewind.tries = (VinylRewind.tries || 0) + 1;
+  const buttonLate = !ButtonApi && VinylRewind.tries < 35;
+  if (!window.Spicetify || !Spicetify.Player || !Spicetify.Player.origin || buttonLate || !document.body) {
     setTimeout(VinylRewind, 300);
     return;
   }
@@ -635,8 +639,10 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   }
 
   let trackToken = 0;
+  let shownUri = null; // the song Vinyl mode is showing (or loading)
   async function updateTrack() {
     const item = currentItem();
+    shownUri = (item && item.uri) || null;
     const meta = (item && item.metadata) || {};
     const title = meta.title || (item && item.name) || "Nothing playing";
     const artists = item && Array.isArray(item.artists) ? item.artists.map((a) => a && a.name).filter(Boolean).join(", ") : "";
@@ -1358,6 +1364,10 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
       if (lyrics.failedAt && now - lyrics.failedAt > 10000) loadLyrics(lyrics.uri); // lyrics request failed earlier: try again
       const it = nextItem();
       if ((it && it.uri) !== nextUri || (!it && !nextEl.classList.contains("hidden"))) updateNextUp();
+      // missed announcements (a Spicetify hiccup): the song on screen or the buttons catch up on their own
+      const cur = currentItem();
+      if (!swap && ((cur && cur.uri) || null) !== shownUri) updateTrack();
+      updateButtons();
     }
   }
 
@@ -2020,7 +2030,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
     requestAnimationFrame(updateNextUp);
     scheduleGlimpse(6000);
     setTimeout(markPlainElements, 600);
-    button.active = true;
+    if (button) button.active = true;
   }
 
   function close() {
@@ -2047,7 +2057,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
     setNear(false);
     endSwap();
     if (sfx.ac) setTimeout(() => !isOpen && sfx.ac.suspend(), 200);
-    button.active = false;
+    if (button) button.active = false;
   }
 
   // ---------- Settings > Vinyl mode ----------
@@ -2230,8 +2240,19 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
 
   // ---------- playbar button ----------
   const ICON = `<svg height="16" width="16" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M0.75 8a7.25 7.25 0 1 0 14.5 0a7.25 7.25 0 1 0 -14.5 0zM2.6 8a5.4 5.4 0 1 0 10.8 0a5.4 5.4 0 1 0 -10.8 0zM3.25 8a4.75 4.75 0 1 0 9.5 0a4.75 4.75 0 1 0 -9.5 0zM5.4 8a2.6 2.6 0 1 0 5.2 0a2.6 2.6 0 1 0 -5.2 0zM7.15 8a0.85 0.85 0 1 0 1.7 0a0.85 0.85 0 1 0 -1.7 0z"/></svg>`;
-  const button = new ButtonApi("Vinyl mode", ICON, () => (isOpen ? close() : open()), false, false);
-  const buttonEl = button.button || button.element;
+  // playbar button; if a future Spicetify changes that API, try the top bar, and otherwise Vinyl mode
+  // still works from Alt+Shift+V and the Home card
+  let button = null;
+  for (const Api of [Spicetify.Playbar && Spicetify.Playbar.Button, Spicetify.Topbar && Spicetify.Topbar.Button]) {
+    if (typeof Api !== "function") continue;
+    try {
+      button = new Api("Vinyl mode", ICON, () => (isOpen ? close() : open()), false, false);
+      break;
+    } catch (err) {
+      console.error("[Vinyl Rewind] could not add the button", err);
+    }
+  }
+  const buttonEl = button && (button.button || button.element);
   if (buttonEl) {
     buttonEl.classList.add("vr-playbar-btn");
     buttonEl.addEventListener("contextmenu", (e) => {
