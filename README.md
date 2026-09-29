@@ -60,7 +60,7 @@ Click the record icon in the playbar, press `Alt + Shift + V`, or use **Try it**
 
 ## Settings
 
-Open Spotify **Settings** and scroll to **Vinyl mode**.
+Open Spotify **Settings** and scroll to **Vinyl mode**, or right-click the record button in the playbar for quick settings.
 
 | Setting | Default |
 | --- | --- |

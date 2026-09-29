@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.5.1
+// VERSION: 1.6.0
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -257,6 +257,9 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
 @media (prefers-reduced-motion: reduce) { .vr-home-card .vr-home-art { animation: none; } }
 .vr-home-card.reduce-motion .vr-home-art { animation: none; }
 #vr-settings .x-settings-firstColumn { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.vr-quick-settings { display: flex; flex-direction: column; min-width: 360px; }
+.vr-quick-settings .x-settings-row { display: flex; align-items: center; justify-content: space-between; gap: 32px; padding: 10px 0; }
+.vr-quick-settings label { color: var(--spice-text, #fff); }
 `;
   document.head.appendChild(style);
 
@@ -1505,6 +1508,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   let returnFocus = null;
 
   function applySettings() {
+    document.querySelectorAll("input[data-vr-setting]").forEach((i) => (i.checked = !!settings[i.dataset.vrSetting]));
     overlay.classList.toggle("reduce-motion", settings.reduceMotion);
     if (isOpen) {
       setSpinning(!grabbing && isPlaying());
@@ -1582,6 +1586,41 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     ["reduceMotion", "Reduce motion"],
   ];
 
+  // one toggle row in Spotify's own switch style; every copy of a setting stays in sync (see applySettings)
+  function settingRow(key, label, id, labelCls) {
+    const row = document.createElement("div");
+    row.className = "x-settings-row";
+    row.innerHTML = `
+      <div class="x-settings-firstColumn">
+        <label class="${labelCls}" for="${id}"></label>
+      </div>
+      <div class="x-settings-secondColumn">
+        <label class="x-toggle-wrapper">
+          <input id="${id}" class="x-toggle-input" type="checkbox" data-vr-setting="${key}">
+          <span class="x-toggle-indicatorWrapper"><span class="x-toggle-indicator"></span></span>
+        </label>
+      </div>`;
+    row.querySelector("label[for]").textContent = label;
+    const input = row.querySelector("input");
+    input.checked = settings[key];
+    input.addEventListener("change", () => {
+      settings[key] = input.checked;
+      saveSettings();
+      applySettings();
+    });
+    return row;
+  }
+
+  // Quick settings: right-click the record button. Uses Spicetify's own popup, so the settings stay
+  // reachable even if a Spotify update changes its Settings page.
+  function openQuickSettings() {
+    if (!Spicetify.PopupModal || !Spicetify.PopupModal.display) return;
+    const box = document.createElement("div");
+    box.className = "vr-quick-settings";
+    for (const [key, label] of SETTING_ROWS) box.appendChild(settingRow(key, label, "vinyl-rewind-quick." + key, ""));
+    Spicetify.PopupModal.display({ title: "Vinyl mode", content: box });
+  }
+
   function injectSettings() {
     if (document.getElementById("vr-settings")) return;
     const sections = document.querySelectorAll(".x-settings-section");
@@ -1600,28 +1639,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
     sec.appendChild(h);
 
     for (const [key, label] of SETTING_ROWS) {
-      const id = "vinyl-rewind." + key;
-      const row = document.createElement("div");
-      row.className = "x-settings-row";
-      row.innerHTML = `
-        <div class="x-settings-firstColumn">
-          <label class="${labelCls}" for="${id}"></label>
-        </div>
-        <div class="x-settings-secondColumn">
-          <label class="x-toggle-wrapper">
-            <input id="${id}" class="x-toggle-input" type="checkbox">
-            <span class="x-toggle-indicatorWrapper"><span class="x-toggle-indicator"></span></span>
-          </label>
-        </div>`;
-      row.querySelector("label[for]").textContent = label;
-      const input = row.querySelector("input");
-      input.checked = settings[key];
-      input.addEventListener("change", () => {
-        settings[key] = input.checked;
-        saveSettings();
-        applySettings();
-      });
-      sec.appendChild(row);
+      sec.appendChild(settingRow(key, label, "vinyl-rewind." + key, labelCls));
     }
 
     const keys = document.createElement("div");
@@ -1739,7 +1757,14 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   // ---------- playbar button ----------
   const ICON = `<svg height="16" width="16" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M0.75 8a7.25 7.25 0 1 0 14.5 0a7.25 7.25 0 1 0 -14.5 0zM2.6 8a5.4 5.4 0 1 0 10.8 0a5.4 5.4 0 1 0 -10.8 0zM3.25 8a4.75 4.75 0 1 0 9.5 0a4.75 4.75 0 1 0 -9.5 0zM5.4 8a2.6 2.6 0 1 0 5.2 0a2.6 2.6 0 1 0 -5.2 0zM7.15 8a0.85 0.85 0 1 0 1.7 0a0.85 0.85 0 1 0 -1.7 0z"/></svg>`;
   const button = new ButtonApi("Vinyl mode", ICON, () => (isOpen ? close() : open()), false, false);
-  (button.button || button.element)?.classList.add("vr-playbar-btn");
+  const buttonEl = button.button || button.element;
+  if (buttonEl) {
+    buttonEl.classList.add("vr-playbar-btn");
+    buttonEl.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      openQuickSettings();
+    });
+  }
 
   // Grayscale crumpled-paper texture, centered on mid-gray so it only adds creases and facets to the color.
   function crumpleTexture() {
