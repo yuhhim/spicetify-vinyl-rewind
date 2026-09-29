@@ -2,7 +2,7 @@
   {
     "name": "Vinyl Rewind",
     "description": "A fullscreen spinning record. Grab and turn it to rewind or fast-forward the song like a real turntable.",
-    "preview": "preview.png",
+    "preview": "preview.webp",
     "main": "rewind.js",
     "readme": "README.md",
     "authors": [{ "name": "Parker", "url": "" }],
