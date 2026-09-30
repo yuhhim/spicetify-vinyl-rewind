@@ -1,35 +1,53 @@
 # The Spicetify Marketplace loads rewind.js through jsDelivr, which caches it.
-# Purge that cache on every push so updates reach users on their next Spotify launch.
+# On every push: check rewind.js (it parses, passes code analysis and a start-up test in a simulated Spotify page),
+# then purge jsDelivr's cache so the update reaches users on their next Spotify launch.
+# A rewind.js that fails any check is never purged into the CDN: the last good (cached) copy keeps being served.
 # jsDelivr throttles repeated purges of the same file; when that happens, wait it out and purge again.
-# A broken rewind.js is never purged into the CDN: the last good (cached) copy keeps being served instead.
-name: Purge jsDelivr cache
+name: Check and purge jsDelivr cache
 
 on:
   push:
     branches: [main]
-    paths: ["rewind.js", "manifest.json", "README.md", "preview.webp"]
+    paths: ["rewind.js", "manifest.json", "README.md", "preview.webp", ".github/**"]
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: purge-cdn
+  group: purge-cdn-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
-  purge:
+  check:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Check
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Basic checks
         run: |
           node --check rewind.js
           node -e 'JSON.parse(require("fs").readFileSync("manifest.json", "utf8"))'
           version=$(sed -n 's|^// VERSION: \([0-9.]*\)$|\1|p' rewind.js | head -1)
           test -n "$version"
-          echo "rewind.js $version looks good"
+          echo "rewind.js $version"
+      - name: Install check tools
+        run: npm install --no-save --no-audit --no-fund jsdom@24 eslint@9 @eslint/js@9 globals@15
+      - name: Code analysis
+        run: npx eslint --config .github/scripts/eslint.config.mjs rewind.js
+      - name: Start-up test
+        run: node .github/scripts/smoke.mjs
+
+  purge:
+    needs: check
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
       - name: Purge
         run: |
           for f in rewind.js manifest.json README.md preview.webp; do
