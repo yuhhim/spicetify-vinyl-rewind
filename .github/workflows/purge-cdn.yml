@@ -28,6 +28,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: .github/scripts/package-lock.json
       - name: Basic checks
         run: |
           node --check rewind.js
@@ -35,10 +37,10 @@ jobs:
           version=$(sed -n 's|^// VERSION: \([0-9.]*\)$|\1|p' rewind.js | head -1)
           test -n "$version"
           echo "rewind.js $version"
-      - name: Install check tools
-        run: npm install --no-save --no-audit --no-fund jsdom@24 eslint@9 @eslint/js@9 globals@15
+      - name: Install check tools (exact versions from package-lock.json)
+        run: npm ci --prefix .github/scripts --no-audit --no-fund
       - name: Code analysis
-        run: npx eslint --config .github/scripts/eslint.config.mjs rewind.js
+        run: .github/scripts/node_modules/.bin/eslint --config .github/scripts/eslint.config.mjs rewind.js
       - name: Start-up test
         run: node .github/scripts/smoke.mjs
 

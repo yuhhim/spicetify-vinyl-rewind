@@ -23,7 +23,7 @@ Search for **Vinyl Rewind** in the Marketplace and install it.
 
 ### Manually
 
-1. Download `rewind.js` and put it in your Spicetify `Extensions` folder:
+1. Download `rewind.js` from the [latest release](https://github.com/yuhhim/spicetify-vinyl-rewind/releases/latest) and put it in your Spicetify `Extensions` folder:
    - Windows: `%appdata%\spicetify\Extensions`
    - macOS / Linux: `~/.config/spicetify/Extensions`
 2. Run:
@@ -80,6 +80,13 @@ Scratching is turned off automatically when Spotify doesn't allow seeking (ads, 
 ## Performance
 
 The record spins on the GPU, so it stays smooth at your display's full refresh rate, and it follows your mouse as fast as the mouse reports. The rewind sound is made on its own audio thread, so it never stutters. Song changes and scratching are free of long stalls, even when skipping quickly. While Vinyl mode is open, Spotify's hidden interface is paused out of layout; while it is closed, Vinyl Rewind does no work at all.
+
+## How it's built
+
+- **One file.** `rewind.js` is self-contained, as Spicetify extensions are, and reads top to bottom in named parts (listed at the top of the file): settings, styles, the record, lyrics, the next song, scratching, controls, keyboard, and Spotify's Settings and Home pages.
+- **Smooth by design.** The record spins as a GPU animation, the page is only touched when something visible changes, and the rewind sound runs on its own audio thread.
+- **Resilient.** Every Spotify feature it uses has a fallback, so a Spotify update can switch off a detail but not the whole extension. It also catches up on song changes Spicetify forgets to announce.
+- **Checked before it ships.** Every change runs through code analysis and a start-up test in a simulated Spotify (`.github/scripts`) before the Marketplace copy is updated; a change that fails is never delivered.
 
 ## Uninstall
 

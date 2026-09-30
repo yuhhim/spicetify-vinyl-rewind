@@ -1,0 +1,11 @@
+{
+  "name": "vinyl-rewind-checks",
+  "private": true,
+  "description": "Tools for the checks in .github/workflows (code analysis and the start-up test).",
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "globals": "^15.0.0",
+    "jsdom": "^24.0.0"
+  }
+}
