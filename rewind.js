@@ -1,6 +1,6 @@
 // NAME: Vinyl Rewind
 // AUTHOR: Parker
-// VERSION: 1.7.12.2
+// VERSION: 1.7.12.3
 // DESCRIPTION: A fullscreen spinning record for Spotify. Grab and turn it to rewind or fast-forward the song like a real turntable.
 
 (function VinylRewind() {
@@ -974,7 +974,7 @@ body:fullscreen #vr-overlay .vr-close, :fullscreen #vr-overlay .vr-close { top: 
   }
 
   overlay.addEventListener("pointermove", (e) => {
-    if (idle || grabbing || nextEl.classList.contains("hidden") || performance.now() < nextQuietUntil) return setNear(false);
+    if (idle || hand.holding || nextEl.classList.contains("hidden") || performance.now() < nextQuietUntil) return setNear(false);
     if (!nextZone) measureNextZone();
     setNear(e.clientX > nextZone.left && e.clientY > nextZone.top && e.clientY < nextZone.bottom);
   });
@@ -1218,15 +1218,21 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
   // ---------- turntable state ----------
   let isOpen = false;
   let raf = 0;
-  let grabbing = false;
-  let wasPlaying = false;  // playback state before the hand touched the record
-  let vPos = 0;            // record position in the song (seconds) while grabbed
-  let handVel = 0;         // deg/s
-  let pointerAngle = 0;
-  let lastMoveAt = 0;
+  // everything about a hand on the record, in one place
+  const hand = {
+    holding: false,    // a hand is on the record right now
+    wasPlaying: false, // playback state before the hand touched it
+    pos: 0,            // record position in the song (seconds) while held
+    startPos: 0,       // ... when the hand touched it
+    uri: null,         // the song under the hand; letting go never seeks inside a different one
+    vel: 0,            // deg/s
+    angle: 0,          // pointer angle around the centre
+    movedAt: 0,        // last time the hand moved
+    center: null,      // the record's centre, measured when grabbed (it is held still while grabbed)
+  };
   let barDrag = null;      // seconds while dragging the progress bar
   let pendingPos = null;   // position shown right after a seek until Spotify catches up
-  let lastSec = -1, lastDur = -1, lastP = -1;
+  const drawn = { sec: -1, dur: -1, p: -1 }; // what the frame loop last put on screen (-1 = redraw)
 
   // Spotify takes a moment to report play/pause; trust what we just asked for until it catches up.
   let intent = null;
@@ -1289,7 +1295,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
 
   function displayPos() {
     if (barDrag !== null) return barDrag;
-    if (grabbing) return vPos;
+    if (hand.holding) return hand.pos;
     const real = Spicetify.Player.getProgress() / 1000;
     if (pendingPos) {
       const now = performance.now();
@@ -1316,8 +1322,8 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
   }
 
   function renderFrame() {
-    if (grabbing) {
-      setSfxSpeed(!settings.sound || performance.now() - lastMoveAt > HAND_STILL_MS ? 0 : handVel / DEG_PER_SEC);
+    if (hand.holding) {
+      setSfxSpeed(!settings.sound || performance.now() - hand.movedAt > HAND_STILL_MS ? 0 : hand.vel / DEG_PER_SEC);
     } else {
       setSfxSpeed(0);
       setSpinning(isPlaying());
@@ -1326,7 +1332,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
     const dur = durationSec();
     const pos = displayPos();
     const sec = Math.floor(pos);
-    if (sec !== lastSec || dur !== lastDur) {
+    if (sec !== drawn.sec || dur !== drawn.dur) {
       curText.data = fmt(pos);
       if (settings.remaining) durText.data = "-" + fmt(Math.max(0, dur - pos));
       const text = `${fmt(pos)} of ${fmt(dur)}`;
@@ -1335,22 +1341,22 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
         el.setAttribute("aria-valuenow", String(sec));
         el.setAttribute("aria-valuetext", text);
       }
-      lastSec = sec;
+      drawn.sec = sec;
     }
-    if (dur !== lastDur) {
+    if (dur !== drawn.dur) {
       if (!settings.remaining) durText.data = fmt(dur);
-      lastDur = dur;
+      drawn.dur = dur;
     }
     const p = dur ? Math.min(1, Math.max(0, pos / dur)) : 0;
-    if (Math.abs(p - lastP) > 0.0002) {
+    if (Math.abs(p - drawn.p) > 0.0002) {
       fillEl.style.transform = `scaleX(${p})`;
       railEl.style.transform = `translateX(${p * 100}%)`;
-      lastP = p;
+      drawn.p = p;
     }
     syncVolume();
     if (sfx.ac) {
       // the sound engine sleeps whenever the record is not being held
-      if (grabbing || sfx.speed) {
+      if (hand.holding || sfx.speed) {
         sfx.quietSince = 0;
       } else if (sfx.ac.state === "running") {
         if (!sfx.quietSince) sfx.quietSince = performance.now();
@@ -1371,25 +1377,21 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
     }
   }
 
-  // the record's centre is measured when it is grabbed (it is held still while grabbed)
-  let discCenter = null;
 
   function angleAt(e) {
-    if (!discCenter || !grabbing) {
+    if (!hand.center || !hand.holding) {
       const r = discEl.getBoundingClientRect();
-      discCenter = { x: r.left + r.width / 2, y: r.top + r.height / 2, radius: r.width / 2 };
+      hand.center = { x: r.left + r.width / 2, y: r.top + r.height / 2, radius: r.width / 2 };
     }
-    return (Math.atan2(e.clientY - discCenter.y, e.clientX - discCenter.x) * 180) / Math.PI;
+    return (Math.atan2(e.clientY - hand.center.y, e.clientX - hand.center.x) * 180) / Math.PI;
   }
 
   // right at the spindle a tiny hand movement is a huge angle change: ignore that spot
-  const nearSpindle = (e) => Math.hypot(e.clientX - discCenter.x, e.clientY - discCenter.y) < discCenter.radius * 0.07;
+  const nearSpindle = (e) => Math.hypot(e.clientX - hand.center.x, e.clientY - hand.center.y) < hand.center.radius * 0.07;
 
-  let grabStartPos = 0;
-  let grabUri = null; // the song under the hand; letting go never seeks inside a different one
 
   discEl.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0 || grabbing || swap) return;
+    if (e.button !== 0 || hand.holding || swap) return;
     e.preventDefault();
     if (!canScratch()) return;
     sendNudge(); // a nudge still on its way lands before the hand takes over
@@ -1402,57 +1404,57 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
     setSpinning(false); // hand on the record: it stops right now
     if (settings.sound) startSfx();
 
-    discCenter = null; // re-measure for this grab
-    wasPlaying = isPlaying();
-    vPos = grabStartPos = displayPos();
-    grabUri = (currentItem() || {}).uri || null;
-    if (wasPlaying) setPlaying(false);
-    grabbing = true;
-    handVel = 0;
-    pointerAngle = angleAt(e);
-    lastMoveAt = 0;
+    hand.center = null; // re-measure for this grab
+    hand.wasPlaying = isPlaying();
+    hand.pos = hand.startPos = displayPos();
+    hand.uri = (currentItem() || {}).uri || null;
+    if (hand.wasPlaying) setPlaying(false);
+    hand.holding = true;
+    hand.vel = 0;
+    hand.angle = angleAt(e);
+    hand.movedAt = 0;
   });
 
   // pointerrawupdate delivers every mouse report as it happens (not batched per frame), so the record
   // always shows the hand's latest position; plain pointermove is the fallback
   const RAW_MOVES = "onpointerrawupdate" in discEl;
   discEl.addEventListener(RAW_MOVES ? "pointerrawupdate" : "pointermove", (e) => {
-    if (!grabbing) return;
+    if (!hand.holding) return;
     const a = angleAt(e);
-    if (nearSpindle(e)) { pointerAngle = a; return; }
-    let d = a - pointerAngle;
+    if (nearSpindle(e)) { hand.angle = a; return; }
+    let d = a - hand.angle;
     if (d > 180) d -= 360;
     if (d < -180) d += 360;
-    pointerAngle = a;
+    hand.angle = a;
     if (d === 0) return;
     d = Math.max(-90, Math.min(90, d)); // one report can never whip the record round
 
-    const next = clampPos(vPos + d / DEG_PER_SEC);
-    const applied = (next - vPos) * DEG_PER_SEC; // the record "sticks" at the start/end of the song
-    vPos = next;
+    const next = clampPos(hand.pos + d / DEG_PER_SEC);
+    const applied = (next - hand.pos) * DEG_PER_SEC; // the record "sticks" at the start/end of the song
+    hand.pos = next;
     setAngle(getAngle() + applied); // record follows the hand 1:1, immediately
 
     const now = performance.now();
-    const dt = lastMoveAt ? Math.max(4, now - lastMoveAt) / 1000 : 0.016;
-    lastMoveAt = now;
-    handVel = handVel * 0.4 + (applied / dt) * 0.6;
+    const dt = hand.movedAt ? Math.max(4, now - hand.movedAt) / 1000 : 0.016;
+    hand.movedAt = now;
+    hand.vel = hand.vel * 0.4 + (applied / dt) * 0.6;
   });
 
   // seek = false when the grab is abandoned (the song changed underneath the hand)
   function release(e, seek = true) {
-    if (!grabbing) return;
+    if (!hand.holding) return;
     try { if (e && e.pointerId !== undefined) discEl.releasePointerCapture(e.pointerId); } catch {}
     discEl.classList.remove("grabbing");
-    grabbing = false;
+    hand.holding = false;
     discEl.style.transition = "";
     layoutIdle();
     wake();
     setSfxSpeed(0);
     // a plain tap should not stutter the audio, and a song that changed under the hand (even before Spotify
     // announced it) must not get the old song's position
-    const sameSong = ((currentItem() || {}).uri || null) === grabUri;
-    if (seek && sameSong && Math.abs(vPos - grabStartPos) > 0.05) seekTo(vPos);
-    if (wasPlaying) {
+    const sameSong = ((currentItem() || {}).uri || null) === hand.uri;
+    if (seek && sameSong && Math.abs(hand.pos - hand.startPos) > 0.05) seekTo(hand.pos);
+    if (hand.wasPlaying) {
       setSpinning(true); // let go: back to full speed instantly
       setPlaying(true);
     }
@@ -1509,7 +1511,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
     settings.remaining = !settings.remaining;
     saveSettings();
     labelDuration();
-    lastSec = lastDur = -1; // redraw both times on the next frame
+    drawn.sec = drawn.dur = -1; // redraw both times on the next frame
   }
   labelDuration();
   durEl.addEventListener("click", toggleRemaining);
@@ -1521,14 +1523,21 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
   });
 
   // ---------- volume ----------
-  let volDrag = false;
-  let lastVol = -1;
-  let volBeforeMute = 0.5;
+  // the volume control's state
+  const vol = {
+    dragging: false,
+    shown: -1,          // value the slider shows (-1 = not drawn yet)
+    beforeMute: 0.5,    // what unmuting goes back to
+    pending: null,      // value waiting to be sent to Spotify
+    sentAt: 0,          // Spotify volume calls are slow: at most one every ~40 ms
+    timer: 0,
+    holdUntil: 0,       // briefly ignore Spotify's (older) value right after a change
+  };
 
   function renderVolume(v) {
     v = Math.min(1, Math.max(0, Number(v) || 0)); // some Spotify builds may not report a volume
-    if (v === lastVol) return;
-    lastVol = v;
+    if (v === vol.shown) return;
+    vol.shown = v;
     volFillEl.style.transform = `scaleX(${v})`;
     volRailEl.style.transform = `translateX(${v * 100}%)`;
     const name = v === 0 ? "volume-off" : v < 0.34 ? "volume-one-wave" : v < 0.67 ? "volume-two-wave" : "volume";
@@ -1538,29 +1547,28 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
     volBarEl.setAttribute("aria-valuenow", String(Math.round(v * 100)));
   }
 
-  let volSent = 0, volPending = null, volTimer = 0, volHoldUntil = 0;
   function flushVolume() {
-    volTimer = 0;
-    if (volPending === null) return;
-    cmd.volume(volPending);
-    volPending = null;
-    volSent = performance.now();
+    vol.timer = 0;
+    if (vol.pending === null) return;
+    cmd.volume(vol.pending);
+    vol.pending = null;
+    vol.sentAt = performance.now();
   }
 
   function setVolume(v) {
     v = Math.min(1, Math.max(0, Number(v) || 0));
-    if (v > 0) volBeforeMute = v;
+    if (v > 0) vol.beforeMute = v;
     renderVolume(v); // slider moves right away
-    volHoldUntil = performance.now() + 700;
+    vol.holdUntil = performance.now() + 700;
     // Spotify volume calls are slow; send at most one every ~40 ms, always ending on the latest value
-    volPending = v;
-    const wait = 40 - (performance.now() - volSent);
+    vol.pending = v;
+    const wait = 40 - (performance.now() - vol.sentAt);
     if (wait <= 0) flushVolume();
-    else if (!volTimer) volTimer = setTimeout(flushVolume, wait);
+    else if (!vol.timer) vol.timer = setTimeout(flushVolume, wait);
   }
 
   function syncVolume() {
-    if (volDrag || volPending !== null || performance.now() < volHoldUntil) return;
+    if (vol.dragging || vol.pending !== null || performance.now() < vol.holdUntil) return;
     renderVolume(Spicetify.Player.getVolume());
   }
 
@@ -1571,15 +1579,15 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
   volBarEl.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
     volBarEl.setPointerCapture(e.pointerId);
-    volDrag = true;
+    vol.dragging = true;
     volBarEl.parentElement.classList.add("dragging");
     setVolume(volAt(e));
   });
   volBarEl.addEventListener("pointermove", (e) => {
-    if (volDrag) setVolume(volAt(e));
+    if (vol.dragging) setVolume(volAt(e));
   });
   function volUp() {
-    volDrag = false;
+    vol.dragging = false;
     volBarEl.parentElement.classList.remove("dragging");
   }
   volBarEl.addEventListener("pointerup", volUp);
@@ -1587,7 +1595,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
   volBarEl.addEventListener("lostpointercapture", volUp);
   overlay.querySelector(".vr-volume").addEventListener("wheel", (e) => {
     e.preventDefault();
-    setVolume((lastVol < 0 ? Spicetify.Player.getVolume() : lastVol) + (e.deltaY < 0 ? 0.05 : -0.05));
+    setVolume((vol.shown < 0 ? Spicetify.Player.getVolume() : vol.shown) + (e.deltaY < 0 ? 0.05 : -0.05));
   }, { passive: false });
 
   // ---------- controls ----------
@@ -1597,7 +1605,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
     const act = el.dataset.act;
     if (act === "close") return close();
     if (act === "fullscreen") return toggleFullscreen();
-    if (act === "mute") return setVolume(lastVol > 0 ? 0 : volBeforeMute || 0.5);
+    if (act === "mute") return setVolume(vol.shown > 0 ? 0 : vol.beforeMute || 0.5);
     if (act === "play") {
       // update the record and button immediately; Spotify catches up a moment later
       const playing = !isPlaying();
@@ -1621,7 +1629,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
       prevPendingUntil = 0;
       startSwap(-1); // runs before updateTrack, so the outgoing record still shows the old cover
     }
-    if (grabbing) release(null, false); // the position being scrubbed belongs to the old song
+    if (hand.holding) release(null, false); // the position being scrubbed belongs to the old song
     dropNudge(); // so does a nudge that hasn't reached Spotify yet
     barDrag = null;
     if (isOpen) updateTrack(); // (covers for upcoming songs are only preloaded while Vinyl mode is open)
@@ -1639,7 +1647,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
       if (started && settings.autoOpen) open();
       return;
     }
-    if (!grabbing) setSpinning(isPlaying());
+    if (!hand.holding) setSpinning(isPlaying());
     updateButtons();
   });
 
@@ -1665,7 +1673,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
 
   // Rewind / fast-forward from the keyboard; the record turns by the same amount.
   function stepSeek(delta) {
-    if (!canScratch() || grabbing) return;
+    if (!canScratch() || hand.holding) return;
     nudge(delta);
   }
 
@@ -1703,7 +1711,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
 
   // Scroll over the record to nudge it: down (clockwise) goes forward, up rewinds; one wheel notch = 2 s.
   discEl.addEventListener("wheel", (e) => {
-    if (grabbing || swap || !canScratch()) return;
+    if (hand.holding || swap || !canScratch()) return;
     e.preventDefault();
     const px = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaMode === 2 ? e.deltaY * 800 : e.deltaY;
     nudge((px / 100) * 2);
@@ -1789,7 +1797,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
     }
     // the focused volume slider behaves like a slider: ← → change the volume, Home / End go to 0 / 100 %
     if (e.target === volBarEl && /^(ArrowLeft|ArrowRight|Home|End)$/.test(e.key)) {
-      const cur = lastVol < 0 ? Spicetify.Player.getVolume() : lastVol;
+      const cur = vol.shown < 0 ? Spicetify.Player.getVolume() : vol.shown;
       setVolume(e.key === "Home" ? 0 : e.key === "End" ? 1 : cur + (e.key === "ArrowRight" ? 0.05 : -0.05));
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -1815,10 +1823,10 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
         else handled = false;
         break;
       case "ArrowUp":
-        setVolume((lastVol < 0 ? Spicetify.Player.getVolume() : lastVol) + 0.05);
+        setVolume((vol.shown < 0 ? Spicetify.Player.getVolume() : vol.shown) + 0.05);
         break;
       case "ArrowDown":
-        setVolume((lastVol < 0 ? Spicetify.Player.getVolume() : lastVol) - 0.05);
+        setVolume((vol.shown < 0 ? Spicetify.Player.getVolume() : vol.shown) - 0.05);
         break;
       case " ":
       case "Enter":
@@ -1913,13 +1921,13 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
     if (!settings.idle) return;
     idleTimer = setTimeout(() => {
       if (!isOpen) return;
-      if (grabbing || barDrag !== null || volDrag || helpOpen) return armIdle();
+      if (hand.holding || barDrag !== null || vol.dragging || helpOpen) return armIdle();
       setIdle(true);
     }, IDLE_MS);
   }
 
   function wake() {
-    if (grabbing) return armIdle(); // the record stays put while held; release() wakes the UI
+    if (hand.holding) return armIdle(); // the record stays put while held; release() wakes the UI
     setIdle(false);
     armIdle();
   }
@@ -1994,7 +2002,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
     document.querySelectorAll("input[data-vr-setting]").forEach((i) => (i.checked = !!settings[i.dataset.vrSetting]));
     overlay.classList.toggle("reduce-motion", settings.reduceMotion);
     if (isOpen) {
-      setSpinning(!grabbing && isPlaying());
+      setSpinning(!hand.holding && isPlaying());
       if (settings.idle) armIdle();
       else { clearTimeout(idleTimer); setIdle(false); }
     }
@@ -2014,7 +2022,7 @@ registerProcessor("vinyl-rewind-sfx", VrSfx);`;
     isOpen = true;
     document.body.classList.add("vr-open");
     overlay.classList.add("open");
-    lastSec = lastDur = lastP = -1;
+    drawn.sec = drawn.dur = drawn.p = -1;
     setSpinning(isPlaying());
     // show the current song's look immediately on open; fades are only for song changes
     overlay.classList.add("vr-instant");
